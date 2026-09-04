@@ -1,0 +1,24 @@
+[
+  {
+    "externalId": "replace-with-asin-or-sku",
+    "productId": "00000000-0000-4000-8000-000000000001",
+    "slug": "replace-with-product-slug",
+    "platform": "AMAZON_BR",
+    "region": "BRASIL",
+    "category": "SUPLEMENTACAO_LONGEVIDADE",
+    "subcategory": "PERFORMANCE_HIPERTROFIA",
+    "url": "https://www.amazon.com.br/dp/REPLACE_WITH_ASIN",
+    "affiliateUrl": null
+  },
+  {
+    "externalId": "replace-with-mlb-id",
+    "productId": "00000000-0000-4000-8000-000000000002",
+    "slug": "replace-with-mercado-livre-product-slug",
+    "platform": "MERCADO_LIVRE",
+    "region": "BRASIL",
+    "category": "AUTOMOTIVO",
+    "subcategory": "CARROS_POPULARES",
+    "url": "https://produto.mercadolivre.com.br/REPLACE_WITH_PRODUCT_PATH",
+    "affiliateUrl": "PASTE_LINK_GENERATED_BY_MERCADO_LIVRE_HERE"
+  }
+]
