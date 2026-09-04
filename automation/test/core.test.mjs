@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildAffiliateUrl, sanitizeUrl } from '../src/affiliate-links.mjs';
-import { calculateRealDiscount, parseProductHtml } from '../src/ingestion.mjs';
+import { calculateRealDiscount, parseProductHtml, selectTopOffers } from '../src/ingestion.mjs';
 import { formatOfferMessage } from '../src/whatsapp.mjs';
 
 test('sanitizes third-party tracking and injects the configured Amazon BR tag', () => {
@@ -32,6 +32,20 @@ test('parses a standards-based Product JSON-LD payload', () => {
   assert.equal(result.titulo, 'Whey Protein');
   assert.equal(result.preco, 79.9);
   assert.equal(result.disponivel, true);
+});
+
+test('keeps at most twenty best offers in each subcategory', () => {
+  const offers = Array.from({ length: 25 }, (_, index) => ({
+    id: String(index),
+    regiao: 'BRASIL',
+    categoria: 'AUTOMOTIVO',
+    subcategoria: 'CARROS_POPULARES',
+    desconto_real_percentual: index,
+  }));
+  const selected = selectTopOffers(offers, 20);
+  assert.equal(selected.length, 20);
+  assert.equal(selected[0].desconto_real_percentual, 24);
+  assert.equal(selected.at(-1).desconto_real_percentual, 5);
 });
 
 test('formats the WhatsApp message with disclosure and affiliate URL', () => {

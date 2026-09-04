@@ -1,4 +1,4 @@
-export type AffiliateNetwork = 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'iherb' | 'generic';
+export type AffiliateNetwork = 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'aliexpress' | 'iherb' | 'generic';
 
 const THIRD_PARTY_TRACKING_KEYS = [
   'tag', 'aff_id', 'affiliate_id', 'ref', 'ref_', 'linkCode', 'camp', 'creative',

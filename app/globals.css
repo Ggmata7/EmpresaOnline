@@ -31,7 +31,6 @@ button, input { font: inherit; }
 .filter-pill-active { border-color: rgb(183 244 60 / 0.45); background: rgb(183 244 60 / 0.1); color: #d9ff8b; }
 .offer-card { transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
 .offer-card:hover { transform: translateY(-3px); border-color: rgb(183 244 60 / 0.3); box-shadow: 0 24px 65px rgb(0 0 0 / 0.28); }
-.product-strip { position: relative; aspect-ratio: 16 / 10; background-image: linear-gradient(to top, rgb(15 21 17 / 0.4), transparent 45%), url('/catalog-products.png'); background-repeat: no-repeat; background-size: 300% 100%; }
-.product-strip-left { background-position: left center; } .product-strip-center { background-position: center center; } .product-strip-right { background-position: right center; }
+.product-strip { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: radial-gradient(circle at 50% 45%, rgb(183 244 60 / 0.09), transparent 55%), rgb(10 15 12); }
 .hide-scrollbar { scrollbar-width: none; } .hide-scrollbar::-webkit-scrollbar { display: none; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }

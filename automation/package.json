@@ -5,6 +5,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/run-cycle.mjs",
+    "seed": "node src/seed-catalog.mjs",
     "check": "node --check src/affiliate-links.mjs && node --check src/ingestion.mjs && node --check src/whatsapp.mjs && node --check src/distribution.mjs && node --check src/run-cycle.mjs",
     "test": "node --test test/*.test.mjs"
   }

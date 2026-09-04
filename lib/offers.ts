@@ -6,58 +6,64 @@ export type Offer = {
   slug: string;
   region: Region;
   category: Category;
+  subcategory: string;
   title: string;
   retailer: string;
   oldPrice: number;
   price: number;
-  currency: 'BRL' | 'USD';
+  currency: 'BRL' | 'USD' | 'AOA';
   coupon?: string;
-  expiresAt: string;
-  imagePosition: 'left' | 'center' | 'right';
+  expiresAt?: string;
+  imageUrl?: string;
+  rating?: number;
   sourceUrl: string;
-  network: 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'iherb';
+  network: 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'aliexpress' | 'iherb' | 'generic';
   affiliateUrl?: string;
   verified: boolean;
+  verifiedAt?: string;
+  discountPercent: number;
 };
 
-const futureDate = (hours: number) =>
-  new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+export const CATEGORY_LIMIT = 20;
 
-export const offers: Offer[] = [
-  {
-    id: 'of-001', slug: 'kit-manutencao-motor-premium', region: 'brasil', category: 'Automotivo',
-    title: 'Kit manutenção: óleo sintético + filtro premium', retailer: 'Mercado Livre',
-    oldPrice: 389.9, price: 249.9, currency: 'BRL', coupon: 'AUTO20', expiresAt: futureDate(5),
-    imagePosition: 'left', sourceUrl: 'https://www.mercadolivre.com.br/', network: 'mercado-livre', verified: true,
-  },
-  {
-    id: 'of-002', slug: 'combo-whey-creatina', region: 'brasil', category: 'Performance',
-    title: 'Combo performance: whey isolado + creatina', retailer: 'Amazon Brasil',
-    oldPrice: 319.8, price: 219.9, currency: 'BRL', expiresAt: futureDate(11),
-    imagePosition: 'center', sourceUrl: 'https://www.amazon.com.br/', network: 'amazon-br', verified: true,
-  },
-  {
-    id: 'of-003', slug: 'serum-antioxidante-colageno', region: 'brasil', category: 'Longevidade',
-    title: 'Sérum antioxidante + colágeno hidrolisado', retailer: 'Amazon Brasil',
-    oldPrice: 239.9, price: 154.9, currency: 'BRL', coupon: 'CUIDADO15', expiresAt: futureDate(20),
-    imagePosition: 'right', sourceUrl: 'https://www.amazon.com.br/', network: 'amazon-br', verified: true,
-  },
-  {
-    id: 'of-004', slug: 'premium-brake-service-kit', region: 'global', category: 'Automotivo',
-    title: 'Premium brake service kit for European models', retailer: 'Amazon Global',
-    oldPrice: 189, price: 129, currency: 'USD', expiresAt: futureDate(8),
-    imagePosition: 'left', sourceUrl: 'https://www.amazon.com/', network: 'amazon-us', verified: true,
-  },
-  {
-    id: 'of-005', slug: 'creatine-performance-stack', region: 'global', category: 'Performance',
-    title: 'Creatine performance stack — 90 servings', retailer: 'iHerb',
-    oldPrice: 64.9, price: 42.5, currency: 'USD', coupon: 'GLOBAL10', expiresAt: futureDate(16),
-    imagePosition: 'center', sourceUrl: 'https://www.iherb.com/', network: 'iherb', verified: true,
-  },
-  {
-    id: 'of-006', slug: 'longevity-essentials', region: 'global', category: 'Longevidade',
-    title: 'Longevity essentials: antioxidants + daily serum', retailer: 'iHerb',
-    oldPrice: 89.5, price: 58.2, currency: 'USD', expiresAt: futureDate(26),
-    imagePosition: 'right', sourceUrl: 'https://www.iherb.com/', network: 'iherb', verified: true,
-  },
-];
+export function categoryFromDatabase(category: string, subcategory: string): Category {
+  if (category === 'AUTOMOTIVO') return 'Automotivo';
+  if (subcategory === 'PERFORMANCE_HIPERTROFIA') return 'Performance';
+  return 'Longevidade';
+}
+
+export function networkFromDatabase(platform: string): Offer['network'] {
+  const networks: Record<string, Offer['network']> = {
+    AMAZON_BR: 'amazon-br',
+    AMAZON_US: 'amazon-us',
+    MERCADO_LIVRE: 'mercado-livre',
+    ALIEXPRESS: 'aliexpress',
+    IHERB: 'iherb',
+  };
+  return networks[platform] ?? 'generic';
+}
+
+export function retailerFromDatabase(platform: string) {
+  const retailers: Record<string, string> = {
+    AMAZON_BR: 'Amazon Brasil',
+    AMAZON_US: 'Amazon',
+    MERCADO_LIVRE: 'Mercado Livre',
+    ALIEXPRESS: 'AliExpress',
+    IHERB: 'iHerb',
+    FARMACIA: 'Farmácia parceira',
+    AUTOPECAS: 'Autopeças parceira',
+  };
+  return retailers[platform] ?? platform.replaceAll('_', ' ');
+}
+
+export function limitOffersPerCategory(input: Offer[], limit = CATEGORY_LIMIT) {
+  const counts = new Map<Category, number>();
+  return [...input]
+    .sort((a, b) => b.discountPercent - a.discountPercent || b.price - a.price)
+    .filter((offer) => {
+      const current = counts.get(offer.category) ?? 0;
+      if (current >= limit) return false;
+      counts.set(offer.category, current + 1);
+      return true;
+    });
+}

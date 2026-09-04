@@ -1,5 +1,6 @@
 import { DealsDashboard } from '@/components/deals-dashboard';
+import { loadOffers } from '@/lib/catalog';
 
-export default function Home() {
-  return <DealsDashboard />;
+export default async function Home() {
+  return <DealsDashboard offers={await loadOffers()} />;
 }

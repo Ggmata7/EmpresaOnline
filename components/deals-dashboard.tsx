@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Activity, BadgeCheck, CarFront, Dumbbell, HeartPulse, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OfferCard } from '@/components/offer-card';
-import { offers, type Category, type Region } from '@/lib/offers';
+import { CATEGORY_LIMIT, type Category, type Offer, type Region } from '@/lib/offers';
 
 const categories: Array<{ label: 'Todas' | Category; icon: typeof CarFront }> = [
   { label: 'Todas', icon: Sparkles },
@@ -13,7 +13,7 @@ const categories: Array<{ label: 'Todas' | Category; icon: typeof CarFront }> = 
   { label: 'Longevidade', icon: HeartPulse },
 ];
 
-export function DealsDashboard({ initialRegion = 'brasil' }: { initialRegion?: Region }) {
+export function DealsDashboard({ initialRegion = 'brasil', offers }: { initialRegion?: Region; offers: Offer[] }) {
   const [region, setRegion] = useState<Region>(initialRegion);
   const [category, setCategory] = useState<'Todas' | Category>('Todas');
   const [query, setQuery] = useState('');
@@ -46,7 +46,7 @@ export function DealsDashboard({ initialRegion = 'brasil' }: { initialRegion?: R
           <aside className="stats-panel grid grid-cols-3 gap-4 rounded-2xl p-5 lg:grid-cols-1">
             <div><p className="metric-number">{visibleOffers.length}</p><p className="metric-label">ofertas agora</p></div>
             <div><p className="metric-number">{averageDiscount}%</p><p className="metric-label">economia média</p></div>
-            <div><p className="metric-number">30d</p><p className="metric-label">histórico comparado</p></div>
+            <div><p className="metric-number">20</p><p className="metric-label">máximo por categoria</p></div>
           </aside>
         </section>
 
@@ -76,11 +76,14 @@ export function DealsDashboard({ initialRegion = 'brasil' }: { initialRegion?: R
 
         <section aria-labelledby="offers-heading">
           <div className="mb-4 flex items-center justify-between">
-            <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Atualizado há poucos minutos</p><h2 id="offers-heading" className="mt-1 font-display text-2xl font-extrabold tracking-tight">Melhores oportunidades</h2></div>
+            <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Curadoria de até {CATEGORY_LIMIT} itens por categoria</p><h2 id="offers-heading" className="mt-1 font-display text-2xl font-extrabold tracking-tight">Melhores oportunidades</h2></div>
             <SlidersHorizontal className="size-5 text-muted-foreground" aria-hidden="true" />
           </div>
           {visibleOffers.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleOffers.map((offer) => <OfferCard key={offer.id} offer={offer} />)}</div> :
-            <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-muted-foreground">Nenhuma oferta corresponde à busca. Tente outro termo.</div>}
+            <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-muted-foreground">
+              <p className="font-semibold text-white">Nenhuma oferta verificada disponível.</p>
+              <p className="mt-2 text-sm">O catálogo só publica produtos com preço validado e link afiliado ativo.</p>
+            </div>}
         </section>
 
         <footer className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs leading-relaxed text-muted-foreground sm:flex-row sm:justify-between">

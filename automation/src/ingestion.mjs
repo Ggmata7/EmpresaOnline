@@ -63,6 +63,19 @@ export function calculateRealDiscount(currentPrice, thirtyDayPrices, minimumPerc
   return { approved: discountPercent >= minimumPercent, reason: discountPercent >= minimumPercent ? 'real-discount' : 'below-threshold', discountPercent, baseline: Number(baseline.toFixed(2)) };
 }
 
+export function selectTopOffers(offers, limit = 20) {
+  const counts = new Map();
+  return [...offers]
+    .sort((a, b) => Number(b.desconto_real_percentual) - Number(a.desconto_real_percentual))
+    .filter((offer) => {
+      const key = `${offer.regiao}:${offer.categoria}:${offer.subcategoria}`;
+      const count = counts.get(key) || 0;
+      if (count >= limit) return false;
+      counts.set(key, count + 1);
+      return true;
+    });
+}
+
 export async function supabase(path, options = {}) {
   const base = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -80,23 +93,68 @@ export async function ingestSource(source) {
   const parsed = parseProductHtml(await response.text(), source);
   const affiliateUrl = assertTagged(buildAffiliateUrl({ rawUrl: source.url, platform: source.platform, affiliateUrl: source.affiliateUrl }), source.platform);
 
+  const baseProduct = {
+    id: source.productId,
+    slug: source.slug,
+    plataforma: source.platform,
+    titulo: parsed.titulo,
+    categoria: source.category,
+    subcategoria: source.subcategory,
+    regiao: source.region,
+    moeda: parsed.moeda,
+    url_original: source.url,
+    url_afiliado: affiliateUrl,
+    imagem_url: parsed.imagem_url,
+    preco_atual: parsed.preco,
+    oferta_valida_ate: source.expiresAt || null,
+    ativo: false,
+    atualizado_em: new Date().toISOString(),
+  };
+  await supabase('produtos?on_conflict=slug', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(baseProduct),
+  });
+  await supabase('historico_precos', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      produto_id: source.productId,
+      preco: parsed.preco,
+      preco_lista: source.listPrice || null,
+      disponivel: parsed.disponivel,
+      fonte: source.platform,
+    }),
+  });
+
   const history = await supabase(`historico_precos?select=preco&produto_id=eq.${encodeURIComponent(source.productId)}&coletado_em=gte.${encodeURIComponent(new Date(Date.now() - 30 * 86400000).toISOString())}`);
   const evaluation = calculateRealDiscount(parsed.preco, history.map((row) => row.preco), Number(process.env.MIN_REAL_DISCOUNT_PERCENT || 15));
-  if (!evaluation.approved) return { source: source.url, published: false, ...evaluation };
+  const listPrice = Number(source.listPrice);
+  const declaredDiscount = Number.isFinite(listPrice) && listPrice > parsed.preco
+    ? Number((((listPrice - parsed.preco) / listPrice) * 100).toFixed(2))
+    : 0;
+  const allowVerifiedLaunchPrice = source.verifiedByAffiliatePortal === true && declaredDiscount >= Number(process.env.MIN_REAL_DISCOUNT_PERCENT || 15);
+  const approved = parsed.disponivel && (evaluation.approved || allowVerifiedLaunchPrice);
+  const baseline = evaluation.baseline || (allowVerifiedLaunchPrice ? listPrice : null);
+  const discountPercent = evaluation.approved ? evaluation.discountPercent : declaredDiscount;
 
   await supabase('produtos?on_conflict=slug', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({
-      id: source.productId, slug: source.slug, plataforma: source.platform, titulo: parsed.titulo,
-      categoria: source.category, subcategoria: source.subcategory, regiao: source.region, moeda: parsed.moeda,
-      url_original: source.url, url_afiliado: affiliateUrl, imagem_url: parsed.imagem_url,
-      preco_atual: parsed.preco, preco_medio_30d: evaluation.baseline, desconto_real_percentual: evaluation.discountPercent,
-      oferta_valida_ate: source.expiresAt || null, ativo: true, atualizado_em: new Date().toISOString(),
+      ...baseProduct,
+      preco_medio_30d: baseline,
+      desconto_real_percentual: discountPercent,
+      ativo: approved,
     }),
   });
-  await supabase('historico_precos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ produto_id: source.productId, preco: parsed.preco, disponivel: parsed.disponivel, fonte: source.platform }) });
-  return { source: source.url, published: true, ...evaluation };
+  return {
+    source: source.url,
+    published: approved,
+    reason: approved ? (evaluation.approved ? evaluation.reason : 'affiliate-portal-verified') : evaluation.reason,
+    discountPercent,
+    baseline,
+  };
 }
 
 export async function runIngestion(sources) {
@@ -107,5 +165,13 @@ export async function runIngestion(sources) {
     results.push(...await Promise.allSettled(batch.map(ingestSource)));
     await sleep(500 + Math.random() * 500);
   }
+  const active = await supabase('produtos?select=id,regiao,categoria,subcategoria,desconto_real_percentual,atualizado_em&ativo=eq.true&order=desconto_real_percentual.desc');
+  const selected = new Set(selectTopOffers(active, Number(process.env.MAX_OFFERS_PER_CATEGORY || 20)).map((offer) => offer.id));
+  const overflow = active.filter((offer) => !selected.has(offer.id));
+  await Promise.all(overflow.map((offer) => supabase(`produtos?id=eq.${encodeURIComponent(offer.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ ativo: false }),
+  })));
   return results;
 }
