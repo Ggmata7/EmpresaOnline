@@ -1,0 +1,14 @@
+import type { Metadata } from 'next';
+import { BrandMark } from '@/components/brand-mark';
+
+export const metadata: Metadata = { title: 'Transparência e privacidade' };
+
+export default function Transparency() {
+  return <main className="mx-auto max-w-3xl px-5 py-10 text-[#365043]"><a href="/" aria-label="Voltar para o CATch"><BrandMark /></a><h1 className="mb-8 mt-10 text-3xl font-bold tracking-tight">Uma boa escolha começa com informação.</h1><div className="space-y-8 text-sm leading-7">
+    <section><h2 className="mb-2 text-lg font-semibold">Como o CATch funciona</h2><p>Reunimos ofertas de Amazon Brasil, Amazon EUA e Mercado Livre. A compra é concluída no site da loja indicada. O CATch não recebe pagamentos nem processa pedidos. Preços, estoque, frete, entrega, trocas e devoluções dependem da loja e das condições do anúncio.</p></section>
+    <section><h2 className="mb-2 text-lg font-semibold">Links de afiliado</h2><p>Podemos receber uma comissão por compras qualificadas realizadas através dos nossos links, sem custo adicional pelo uso do link. Como participante do Programa de Associados da Amazon, sou remunerado pelas compras qualificadas efetuadas. A loja de destino é identificada no card e no botão da oferta.</p></section>
+    <section><h2 className="mb-2 text-lg font-semibold">Preços e descontos</h2><p>Exibimos a data da última consulta. O valor riscado é um preço de referência informado pela fonte, salvo quando a oferta identificar explicitamente uma média de 30 dias calculada a partir de histórico suficiente. O selo CATch Deal! destaca descontos superiores a 40% em relação a essa referência. Ele não garante o menor preço do mercado. A moeda de 50% do mascote é uma ilustração da marca.</p><p className="mt-2">A atualização é periódica, não instantânea. Confirme as condições no destino antes de comprar. Preços em dólares não incluem conversão, impostos ou frete internacional, salvo indicação expressa da loja.</p></section>
+    <section><h2 className="mb-2 text-lg font-semibold">Favoritos e privacidade</h2><p>Os favoritos são guardados somente no armazenamento local do seu navegador. Você pode removê-los tocando novamente no coração ou limpando os dados deste site no navegador. Não é necessário criar uma conta.</p><p className="mt-2">Ao abrir uma oferta, podemos registrar o identificador da oferta, horário, país aproximado e informações técnicas limitadas do navegador. Quando usado para análise, o endereço IP é convertido em hash com segredo do servidor. Essas informações servem para medir cliques e diagnosticar falhas; não representam confirmação de uma venda. Amazon e Mercado Livre aplicam suas próprias políticas de privacidade ao visitar suas páginas.</p></section>
+    <a href="/#ofertas" className="inline-flex min-h-12 items-center rounded-xl bg-[#244e3f] px-5 font-semibold text-white">Voltar aos achados</a>
+  </div></main>;
+}

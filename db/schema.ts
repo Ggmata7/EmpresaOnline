@@ -1,59 +1,86 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { relations, sql } from 'drizzle-orm';
+import { bigint, boolean, check, index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
-export const produtos = sqliteTable('produtos', {
-  id: text('id').primaryKey(),
+export const marketplace = pgEnum('marketplace', ['amazon_br', 'amazon_us', 'mercado_livre']);
+export const offerCurrency = pgEnum('offer_currency', ['BRL', 'USD']);
+const time = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
+
+export const products = pgTable('products', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  legacyId: text('legacy_id'),
+  title: text('title').notNull(),
   slug: text('slug').notNull(),
-  plataforma: text('plataforma').notNull(),
-  titulo: text('titulo').notNull(),
-  categoria: text('categoria').notNull(),
-  subcategoria: text('subcategoria').notNull(),
-  regiao: text('regiao').notNull(),
-  moeda: text('moeda').notNull(),
-  urlOriginal: text('url_original').notNull(),
-  urlAfiliado: text('url_afiliado'),
-  imagemUrl: text('imagem_url'),
-  ativo: integer('ativo', { mode: 'boolean' }).notNull().default(true),
-  atualizadoEm: text('atualizado_em').notNull(),
+  description: text('description'),
+  category: text('category').notNull(),
+  subcategory: text('subcategory'),
+  imageUrl: text('image_url'),
+  createdAt: time('created_at').defaultNow().notNull(),
+  updatedAt: time('updated_at').defaultNow().notNull(),
+}, (table) => [uniqueIndex('products_slug_unique').on(table.slug), uniqueIndex('products_legacy_id_unique').on(table.legacyId), index('products_category_idx').on(table.category)]);
+
+export const offers = pgTable('offers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  legacyId: text('legacy_id'),
+  platform: marketplace('platform').notNull(),
+  externalId: text('external_id'),
+  sourceUrl: text('source_url').notNull(),
+  // Raw destinations are server-only: RLS/grants deny public reads; UI uses /api/c/[slug].
+  affiliateUrl: text('affiliate_url'),
+  rawAffiliateId: text('raw_affiliate_id'),
+  originalPrice: numeric('original_price', { precision: 14, scale: 2 }),
+  currentPrice: numeric('current_price', { precision: 14, scale: 2 }).notNull(),
+  currency: offerCurrency('currency').notNull(),
+  discountPercentage: integer('discount_percentage').generatedAlwaysAs(sql`case when original_price > current_price then least(100, greatest(0, floor((original_price - current_price) * 100 / original_price)::integer)) else 0 end`),
+  referencePriceKind: text('reference_price_kind').default('unknown').notNull(),
+  referenceProvenance: text('reference_provenance'),
+  historyVerifiedAt: time('history_verified_at'),
+  rating: numeric('rating', { precision: 2, scale: 1 }),
+  ratingCount: integer('rating_count'),
+  shippingPrice: numeric('shipping_price', { precision: 14, scale: 2 }),
+  shippingLabel: text('shipping_label'),
+  inStock: boolean('in_stock').default(false).notNull(),
+  isDealOfTheDay: boolean('is_deal_of_the_day').default(false).notNull(),
+  isActive: boolean('is_active').default(false).notNull(),
+  lastCheckedAt: time('last_checked_at'),
+  expiresAt: time('expires_at'),
+  createdAt: time('created_at').defaultNow().notNull(),
+  updatedAt: time('updated_at').defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex('uq_produtos_slug').on(table.slug),
-  index('idx_produtos_regiao_categoria_ativo').on(table.regiao, table.categoria, table.ativo),
+  uniqueIndex('offers_legacy_id_unique').on(table.legacyId),
+  uniqueIndex('offers_marketplace_external_unique').on(table.platform, table.externalId),
+  index('offers_product_idx').on(table.productId),
+  index('offers_catalog_idx').on(table.currency, table.isActive, table.inStock, table.discountPercentage),
+  index('offers_sync_idx').on(table.lastCheckedAt).where(sql`${table.isActive} = true`),
+  check('offers_positive_price', sql`${table.currentPrice} > 0 and (${table.originalPrice} is null or ${table.originalPrice} > 0)`),
+  check('offers_rating_valid', sql`(${table.rating} is null or ${table.rating} between 0 and 5) and (${table.ratingCount} is null or ${table.ratingCount} >= 0)`),
+  check('offers_shipping_valid', sql`${table.shippingPrice} is null or ${table.shippingPrice} >= 0`),
+  check('offers_reference_kind_valid', sql`${table.referencePriceKind} in ('list', 'average_30d', 'unknown')`),
 ]);
 
-export const historicoPrecos = sqliteTable('historico_precos', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  produtoId: text('produto_id').notNull().references(() => produtos.id, { onDelete: 'cascade' }),
-  preco: real('preco').notNull(),
-  precoLista: real('preco_lista'),
-  disponivel: integer('disponivel', { mode: 'boolean' }).notNull().default(true),
-  coletadoEm: text('coletado_em').notNull(),
-}, (table) => [index('idx_historico_produto_data').on(table.produtoId, table.coletadoEm)]);
+export const offerPriceHistory = pgTable('offer_price_history', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  legacyId: bigint('legacy_id', { mode: 'number' }),
+  offerId: uuid('offer_id').notNull().references(() => offers.id, { onDelete: 'cascade' }),
+  price: numeric('price', { precision: 14, scale: 2 }).notNull(),
+  originalPrice: numeric('original_price', { precision: 14, scale: 2 }),
+  currency: offerCurrency('currency').notNull(),
+  inStock: boolean('in_stock').notNull(),
+  source: text('source').notNull(),
+  observedAt: time('observed_at').defaultNow().notNull(),
+}, (table) => [uniqueIndex('offer_history_legacy_unique').on(table.legacyId), uniqueIndex('offer_history_observation_unique').on(table.offerId, table.observedAt), index('offer_history_offer_time_idx').on(table.offerId, table.observedAt), check('offer_history_positive_price', sql`${table.price} > 0`)]);
 
-export const cupons = sqliteTable('cupons', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  produtoId: text('produto_id').notNull().references(() => produtos.id, { onDelete: 'cascade' }),
-  codigo: text('codigo').notNull(),
-  descontoPercentual: real('desconto_percentual'),
-  validoAte: text('valido_ate'),
-  ativo: integer('ativo', { mode: 'boolean' }).notNull().default(true),
-}, (table) => [index('idx_cupons_produto_ativo').on(table.produtoId, table.ativo)]);
-
-export const canaisWhatsapp = sqliteTable('canais_whatsapp', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  nome: text('nome').notNull(),
-  groupId: text('group_id').notNull(),
-  categoria: text('categoria').notNull(),
-  subcategoria: text('subcategoria'),
-  regiao: text('regiao').notNull(),
-  provedor: text('provedor').notNull(),
-  visibilidade: text('visibilidade').notNull().default('PRIVADO'),
-  ativo: integer('ativo', { mode: 'boolean' }).notNull().default(true),
-}, (table) => [uniqueIndex('uq_canais_whatsapp_group_id').on(table.groupId)]);
-
-export const cliques = sqliteTable('cliques', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  produtoId: text('produto_id').notNull().references(() => produtos.id, { onDelete: 'cascade' }),
-  canal: text('canal').notNull(),
-  visitorHash: text('visitor_hash'),
+export const clickAnalytics = pgTable('click_analytics', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  offerId: uuid('offer_id').notNull().references(() => offers.id, { onDelete: 'cascade' }),
+  userCountry: varchar('user_country', { length: 2 }),
+  ipHash: text('ip_hash'),
   userAgent: text('user_agent'),
-  criadoEm: text('criado_em').notNull(),
-}, (table) => [index('idx_cliques_produto_data').on(table.produtoId, table.criadoEm)]);
+  channel: text('channel').default('site').notNull(),
+  clickedAt: time('clicked_at').defaultNow().notNull(),
+}, (table) => [index('click_analytics_offer_time_idx').on(table.offerId, table.clickedAt)]);
+
+export const productRelations = relations(products, ({ many }) => ({ offers: many(offers) }));
+export const offerRelations = relations(offers, ({ one, many }) => ({ product: one(products, { fields: [offers.productId], references: [products.id] }), history: many(offerPriceHistory), clicks: many(clickAnalytics) }));
+export const priceHistoryRelations = relations(offerPriceHistory, ({ one }) => ({ offer: one(offers, { fields: [offerPriceHistory.offerId], references: [offers.id] }) }));
+export const clickRelations = relations(clickAnalytics, ({ one }) => ({ offer: one(offers, { fields: [clickAnalytics.offerId], references: [offers.id] }) }));

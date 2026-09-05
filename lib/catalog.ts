@@ -1,110 +1,181 @@
 import 'server-only';
 
-import {
-  categoryFromDatabase,
-  limitOffersPerCategory,
-  networkFromDatabase,
-  retailerFromDatabase,
-  type Offer,
-  type Region,
-} from '@/lib/offers';
+import { categoryFromDatabase, limitOffersPerCategory, networkFromDatabase, retailerFromDatabase, type Offer, type Region } from '@/lib/offers';
+import { buildAffiliateUrl, selectRedirectOffer, type RedirectCandidate } from '@/lib/affiliate-links';
 
-type ProductRow = {
-  id: string;
-  slug: string;
-  plataforma: string;
-  titulo: string;
-  categoria: string;
-  subcategoria: string;
-  regiao: 'BRASIL' | 'GLOBAL';
-  moeda: Offer['currency'];
-  url_original: string;
-  url_afiliado: string;
-  imagem_url: string | null;
-  avaliacao: number | string | null;
-  preco_atual: number | string;
-  preco_medio_30d: number | string;
-  desconto_real_percentual: number | string;
-  oferta_valida_ate: string | null;
-  atualizado_em: string;
+type LegacyRow = {
+  id: string; slug: string; plataforma: string; titulo: string; categoria: string; subcategoria: string;
+  regiao: 'BRASIL' | 'GLOBAL'; moeda: 'BRL' | 'USD'; url_original: string; url_afiliado: string;
+  imagem_url: string | null; avaliacao: number | string | null; preco_atual: number | string;
+  preco_medio_30d: number | string; oferta_valida_ate: string | null; atualizado_em: string;
   cupons?: Array<{ codigo: string; valido_ate: string | null; ativo: boolean }>;
 };
+type ProductRow = {
+  id: string; slug: string; title: string; category: Offer['category']; subcategory: string; image_url: string | null;
+};
+type NormalizedRow = {
+  id: string; product_id: string; platform: string; source_url: string; affiliate_url: string | null;
+  original_price: number | string | null; current_price: number | string; currency: 'BRL' | 'USD';
+  reference_price_kind: string; history_verified_at: string | null; rating: number | string | null;
+  rating_count: number | null; shipping_price: number | string | null; shipping_label: string | null;
+  in_stock: boolean | null; last_checked_at: string | null; expires_at: string | null; products: ProductRow;
+};
+type CatalogEntry = { display: Offer; destination: RedirectCandidate };
+const legacySelect = 'id,slug,plataforma,titulo,categoria,subcategoria,regiao,moeda,url_original,url_afiliado,imagem_url,avaliacao,preco_atual,preco_medio_30d,oferta_valida_ate,atualizado_em,cupons(codigo,valido_ate,ativo)';
+const normalizedSelect = 'id,product_id,platform,source_url,affiliate_url,original_price,current_price,currency,reference_price_kind,history_verified_at,rating,rating_count,shipping_price,shipping_label,in_stock,last_checked_at,expires_at,products!inner(id,slug,title,category,subcategory,image_url)';
 
-const select =
-  'id,slug,plataforma,titulo,categoria,subcategoria,regiao,moeda,url_original,url_afiliado,imagem_url,avaliacao,preco_atual,preco_medio_30d,desconto_real_percentual,oferta_valida_ate,atualizado_em,cupons(codigo,valido_ate,ativo)';
+export class CatalogUnavailableError extends Error {}
 
-function env() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return url && key ? { url: url.replace(/\/$/, ''), key } : null;
+function config(normalized = false) {
+  const endpoint = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || (!normalized && (process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY));
+  if (!endpoint || !key) throw new CatalogUnavailableError('Catalog environment is incomplete.');
+  return { endpoint: endpoint.replace(/\/$/, ''), key };
 }
 
-function toOffer(row: ProductRow): Offer {
-  const coupon = row.cupons?.find(
-    (item) => item.ativo && (!item.valido_ate || new Date(item.valido_ate) > new Date()),
-  );
-  return {
-    id: row.id,
-    slug: row.slug,
-    region: row.regiao === 'BRASIL' ? 'brasil' : 'global',
-    category: categoryFromDatabase(row.categoria, row.subcategoria),
-    subcategory: row.subcategoria,
-    title: row.titulo,
-    retailer: retailerFromDatabase(row.plataforma),
-    oldPrice: Number(row.preco_medio_30d),
-    price: Number(row.preco_atual),
-    currency: row.moeda,
-    coupon: coupon?.codigo,
-    expiresAt: row.oferta_valida_ate || undefined,
-    imageUrl: row.imagem_url || undefined,
-    rating: row.avaliacao == null ? undefined : Number(row.avaliacao),
-    sourceUrl: row.url_original,
-    affiliateUrl: row.url_afiliado,
-    network: networkFromDatabase(row.plataforma),
-    verified: true,
-    verifiedAt: row.atualizado_em,
-    discountPercent: Number(row.desconto_real_percentual),
+function validPrice(value: unknown): number | undefined {
+  const number = value == null ? NaN : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function discount(price: number, reference: number) {
+  return reference > price ? Math.max(0, Math.min(99, Math.round((1 - price / reference) * 100))) : 0;
+}
+
+function displayable(entry: CatalogEntry) {
+  const offer = entry.display;
+  if (!Number.isFinite(offer.price) || offer.price <= 0 || offer.availability === 'out_of_stock' ||
+    (offer.expiresAt && !(Date.parse(offer.expiresAt) > Date.now()))) return false;
+  try {
+    buildAffiliateUrl({ rawUrl: entry.destination.sourceUrl, network: entry.destination.network, preGeneratedAffiliateUrl: entry.destination.affiliateUrl });
+    return true;
+  } catch { return false; }
+}
+
+function fromLegacy(row: LegacyRow): CatalogEntry | null {
+  const network = networkFromDatabase(row.plataforma);
+  if (!network || (network === 'amazon-us' ? row.moeda !== 'USD' : row.moeda !== 'BRL')) return null;
+  const coupon = row.cupons?.find((item) => item.ativo && (!item.valido_ate || Date.parse(item.valido_ate) > Date.now()));
+  const price = Number(row.preco_atual);
+  const reference = validPrice(row.preco_medio_30d) ?? price;
+  const display: Offer = {
+    id: row.id, productId: row.id, slug: row.slug, region: network === 'amazon-us' ? 'global' : 'brasil',
+    category: categoryFromDatabase(row.categoria, row.subcategoria), subcategory: row.subcategoria,
+    title: row.titulo, retailer: retailerFromDatabase(row.plataforma), oldPrice: reference, price, currency: row.moeda,
+    coupon: coupon?.codigo, expiresAt: row.oferta_valida_ate || undefined, imageUrl: row.imagem_url || undefined,
+    rating: validPrice(row.avaliacao), network, priceBasis: 'list', availability: 'unknown',
+    // Legacy imports sometimes put a retailer list price into preco_medio_30d: never advertise this as history.
+    verified: Boolean(row.atualizado_em), verifiedAt: row.atualizado_em, lastChecked: row.atualizado_em,
+    discountPercent: discount(price, reference), shippingCost: null,
   };
+  return { display, destination: { id: row.id, productId: row.id, network, price, currency: row.moeda,
+    availability: 'unknown', expiresAt: display.expiresAt, sourceUrl: row.url_original,
+    affiliateUrl: row.url_afiliado || undefined, analyticsSource: 'legacy' } };
+}
+
+function fromNormalized(row: NormalizedRow): CatalogEntry | null {
+  const network = networkFromDatabase(row.platform);
+  if (!network || !row.products || (network === 'amazon-us' ? row.currency !== 'USD' : row.currency !== 'BRL')) return null;
+  const price = Number(row.current_price);
+  const reference = validPrice(row.original_price) ?? price;
+  const historyVerifiedAt = row.reference_price_kind === 'average_30d' ? row.history_verified_at || undefined : undefined;
+  const availability = row.in_stock === true ? 'in_stock' : row.in_stock === false ? 'out_of_stock' : 'unknown';
+  const shippingCost = validPrice(row.shipping_price) ?? null;
+  const display: Offer = {
+    id: row.id, productId: row.product_id, slug: row.products.slug, region: network === 'amazon-us' ? 'global' : 'brasil',
+    category: row.products.category, subcategory: row.products.subcategory || '', title: row.products.title,
+    retailer: retailerFromDatabase(row.platform), imageUrl: row.products.image_url || undefined,
+    price, oldPrice: reference, currency: row.currency, network, priceBasis: historyVerifiedAt ? 'history30d' : 'list',
+    historyVerifiedAt, rating: validPrice(row.rating), ratingCount: row.rating_count ?? undefined,
+    shippingCost, shippingLabel: row.shipping_label || undefined, availability,
+    lastChecked: row.last_checked_at || undefined, verifiedAt: row.last_checked_at || undefined,
+    verified: Boolean(row.last_checked_at), expiresAt: row.expires_at || undefined, discountPercent: discount(price, reference),
+  };
+  return { display, destination: { id: row.id, productId: row.product_id, network, price, currency: row.currency,
+    shippingCost, availability, expiresAt: display.expiresAt, sourceUrl: row.source_url,
+    affiliateUrl: row.affiliate_url || undefined, analyticsSource: 'normalized' } };
+}
+
+async function requestRows(normalized: boolean, slug?: string, region?: Region): Promise<CatalogEntry[] | null> {
+  const { endpoint, key } = config(normalized);
+  const params = new URLSearchParams({ select: normalized ? normalizedSelect : legacySelect, limit: '1000' });
+  if (normalized) {
+    params.set('is_active', 'eq.true');
+    params.set('current_price', 'gt.0');
+    params.set('platform', region === 'brasil' ? 'in.(amazon_br,mercado_livre)' : region === 'global' ? 'eq.amazon_us' : 'in.(amazon_br,amazon_us,mercado_livre)');
+    params.set('order', 'discount_percentage.desc');
+    if (slug) params.set('products.slug', `eq.${slug}`);
+  } else {
+    params.set('ativo', 'eq.true');
+    params.set('preco_atual', 'gt.0');
+    params.set('plataforma', region === 'brasil' ? 'in.(AMAZON_BR,MERCADO_LIVRE)' : region === 'global' ? 'eq.AMAZON_US' : 'in.(AMAZON_BR,AMAZON_US,MERCADO_LIVRE)');
+    params.set('order', 'desconto_real_percentual.desc');
+    if (slug) params.set('slug', `eq.${slug}`);
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${endpoint}/rest/v1/${normalized ? 'offers' : 'produtos'}?${params}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      ...(slug ? { cache: 'no-store' as const } : { next: { revalidate: 900, tags: ['catalog'] } }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch { throw new CatalogUnavailableError('Catalog request failed.'); }
+  if (!response.ok) {
+    // Only an absent table/column allows an additive migration fallback. An empty v2 catalog stays empty.
+    if (normalized) {
+      const error = await response.json().catch(() => ({}));
+      if (['PGRST205', 'PGRST200', 'PGRST204', '42P01', '42703'].includes(error.code)) return null;
+    }
+    throw new CatalogUnavailableError(`Catalog fetch failed (${response.status}).`);
+  }
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new CatalogUnavailableError('Catalog response is malformed.');
+  const entries = rows.map(normalized ? fromNormalized : fromLegacy).filter((entry): entry is CatalogEntry => Boolean(entry));
+  return slug ? entries : entries.filter(displayable);
+}
+
+async function loadEntries(slug?: string, region?: Region) {
+  if (process.env.CATALOG_SCHEMA_VERSION === '2') {
+    const entries = await requestRows(true, slug, region);
+    if (entries) return entries;
+  }
+  return await requestRows(false, slug, region) || [];
+}
+
+function groupProducts(entries: CatalogEntry[]) {
+  const groups = new Map<string, CatalogEntry[]>();
+  for (const entry of entries) {
+    const key = `${entry.display.productId}:${entry.display.region}`;
+    groups.set(key, [...(groups.get(key) || []), entry]);
+  }
+  return Array.from(groups.values()).map((group) => {
+    const selected = selectRedirectOffer(group.map((entry) => entry.destination), group[0].display.region === 'brasil' ? 'BR' : 'US');
+    const best = group.find((entry) => entry.destination.id === selected?.id) || group[0];
+    return { ...best.display, alternatives: group.map(({ display }) => ({
+      id: display.id, retailer: display.retailer, network: display.network, price: display.price,
+      currency: display.currency as 'BRL' | 'USD', shippingCost: display.shippingCost,
+      shippingLabel: display.shippingLabel, lastChecked: display.lastChecked,
+    })) };
+  });
 }
 
 export async function loadOffers(region?: Region): Promise<Offer[]> {
-  const config = env();
-  if (!config) return [];
-  const filters = [
-    'ativo=eq.true',
-    'url_afiliado=not.is.null',
-    'preco_atual=gt.0',
-    'preco_medio_30d=gt.0',
-  ];
-  if (region) filters.push(`regiao=eq.${region === 'brasil' ? 'BRASIL' : 'GLOBAL'}`);
-  const response = await fetch(
-    `${config.url}/rest/v1/produtos?select=${encodeURIComponent(select)}&${filters.join('&')}&order=desconto_real_percentual.desc&limit=120`,
-    {
-      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
-      next: { revalidate: 900 },
-    },
-  );
-  if (!response.ok) {
-    console.error('Catalog fetch failed', response.status, await response.text());
+  try {
+    // Fetch regions separately so a large BR catalog cannot crowd out the US in the database's result cap.
+    const entries = region ? await loadEntries(undefined, region) : (await Promise.all([
+      loadEntries(undefined, 'brasil'), loadEntries(undefined, 'global'),
+    ])).flat();
+    return limitOffersPerCategory(groupProducts(entries));
+  } catch (error) {
+    console.error('Catalog unavailable:', error instanceof CatalogUnavailableError ? error.message : 'unexpected response');
     return [];
   }
-  return limitOffersPerCategory(((await response.json()) as ProductRow[]).map(toOffer));
 }
 
-export async function loadOfferBySlug(slug: string) {
-  const config = env();
-  if (!config) return null;
-  const response = await fetch(
-    `${config.url}/rest/v1/produtos?select=${encodeURIComponent(select)}&slug=eq.${encodeURIComponent(slug)}&ativo=eq.true&url_afiliado=not.is.null&limit=1`,
-    {
-      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
-      cache: 'no-store',
-    },
-  );
-  if (!response.ok) return null;
-  const [row] = (await response.json()) as ProductRow[];
-  return row ? toOffer(row) : null;
+export async function loadRedirectCandidates(slug: string) {
+  return (await loadEntries(slug)).map((entry) => entry.destination);
+}
+
+export async function loadOfferBySlug(slug: string): Promise<Offer | null> {
+  return groupProducts(await loadEntries(slug))[0] || null;
 }

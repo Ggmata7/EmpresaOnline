@@ -1,34 +1,29 @@
 'use client';
 
-import { memo } from 'react';
-import { CarFront, Dumbbell, HeartPulse, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { memo, useState } from 'react';
+import { ChevronDown, SlidersHorizontal, Store, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import type { Category, Region } from '@/lib/offers';
+import type { Category, Offer, Region } from '@/lib/offers';
 
 export type CategoryFilter = 'Todas' | Category;
-const categories: Array<{ label: CategoryFilter; icon: typeof Sparkles }> = [
-  { label: 'Todas', icon: Sparkles }, { label: 'Automotivo', icon: CarFront },
-  { label: 'Performance', icon: Dumbbell }, { label: 'Longevidade', icon: HeartPulse },
-];
+export type StoreFilter = 'all' | 'amazon-br' | 'amazon-us' | 'mercado-livre';
+type Props = { region: Region; store: StoreFilter; onlyDeals: boolean; onlyCoupons: boolean; resultCount: number; offers: Offer[]; onStoreChange: (value: StoreFilter) => void; onDealsChange: (value: boolean) => void; onCouponsChange: (value: boolean) => void; onReset: () => void };
 
-type Props = { region: Region; category: CategoryFilter; query: string; resultCount: number; onRegionChange: (value: Region) => void; onCategoryChange: (value: CategoryFilter) => void; onQueryChange: (value: string) => void };
-
-function FilterFields({ region, category, query, onRegionChange, onCategoryChange, onQueryChange }: Omit<Props, 'resultCount'>) {
+function FilterFields({ region, store, onlyDeals, onlyCoupons, offers, onStoreChange, onDealsChange, onCouponsChange }: Props) {
+  const stores = region === 'brasil' ? [{ id: 'amazon-br' as const, name: 'Amazon Brasil' }, { id: 'mercado-livre' as const, name: 'Mercado Livre' }] : [{ id: 'amazon-us' as const, name: 'Amazon EUA' }];
   return <div className="space-y-6">
-    <fieldset><legend className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Região</legend><div className="grid grid-cols-2 gap-2">
-      {([['brasil', 'Brasil · BRL'], ['global', 'Global']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => onRegionChange(value)} aria-pressed={region === value} className={`min-h-11 rounded-lg border px-3 text-sm font-semibold transition ${region === value ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>{label}</button>)}
-    </div></fieldset>
-    <fieldset><legend className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Categoria</legend><div className="space-y-1">
-      {categories.map(({ label, icon: Icon }) => <button key={label} type="button" onClick={() => onCategoryChange(label)} aria-pressed={category === label} className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition ${category === label ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}><Icon className="size-4" />{label}</button>)}
-    </div></fieldset>
-    <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar</span><span className="relative block"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Produto ou marca" className="min-h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></span></label>
+    <fieldset><legend className="mb-2 flex items-center gap-2 text-xs font-bold text-[#2f4940]"><Store size={14} /> Lojas</legend>
+      {[{ id: 'all' as const, name: 'Todas as lojas' }, ...stores].map(({ id, name }) => { const count = offers.filter(o => o.region === region && (id === 'all' || o.network === id)).length; return <label key={id} className="flex min-h-11 cursor-pointer items-center gap-2.5 text-xs text-[#65746b]"><input type="radio" name={`store-${region}`} value={id} checked={store === id} onChange={() => onStoreChange(id)} className="size-4 accent-[#2d624e]" /><span>{name}</span><span className="ml-auto text-[10px] text-[#89988e]">{count}</span></label>; })}
+    </fieldset>
+    <fieldset className="border-t border-[#e6ebe5] pt-5"><legend className="pt-4 text-xs font-bold text-[#2f4940]">Um filtro a mais</legend><label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-xs text-[#65746b]"><input type="checkbox" checked={onlyDeals} onChange={e => onDealsChange(e.target.checked)} className="size-4 rounded accent-[#2d624e]" />Mais de 40% OFF</label><label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-xs text-[#65746b]"><input type="checkbox" checked={onlyCoupons} onChange={e => onCouponsChange(e.target.checked)} className="size-4 rounded accent-[#2d624e]" />Com cupom</label></fieldset>
+    <p className="rounded-xl bg-[#edf2eb] p-3 text-[11px] leading-5 text-[#647669]">Preços em {region === 'brasil' ? 'reais (BRL)' : 'dólares (USD)'}. Consulte o frete e as condições de entrega na loja.{region === 'global' && ' Compras internacionais podem ter impostos e restrições de envio.'}</p>
   </div>;
 }
 
 export const ProductFilters = memo(function ProductFilters(props: Props) {
-  const fields = <FilterFields {...props} />;
+  const [open, setOpen] = useState(false);
   return <>
-    <aside className="hidden self-start rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-5 lg:block" aria-label="Filtros de produtos"><div className="mb-5 flex items-center gap-2 border-b border-slate-100 pb-4 text-base font-semibold text-slate-900"><SlidersHorizontal className="size-4" />Filtros</div>{fields}</aside>
-    <div className="sticky top-2 z-30 mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur lg:hidden"><p className="px-2 text-sm font-medium text-slate-600">{props.resultCount} ofertas</p><Sheet><SheetTrigger className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white"><SlidersHorizontal className="size-4" />Filtrar</SheetTrigger><SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl border-slate-200 bg-slate-50 text-slate-900"><SheetHeader><SheetTitle>Filtrar ofertas</SheetTitle><SheetDescription>Refine por região, categoria ou produto.</SheetDescription></SheetHeader><div className="px-4 pb-6">{fields}</div></SheetContent></Sheet></div>
+    <aside className="hidden self-start lg:sticky lg:top-28 lg:block" aria-label="Filtros de produtos"><details open className="group rounded-2xl border border-[#e1e7de] bg-[#f6f8f2] p-4"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-bold text-[#2f4940]"><span className="flex items-center gap-2"><SlidersHorizontal size={16} />Refinar busca</span><ChevronDown size={15} className="transition group-open:rotate-180" /></summary><div className="pt-3"><FilterFields {...props} /><button type="button" onClick={props.onReset} className="mt-3 min-h-11 text-xs font-semibold text-[#607467] underline underline-offset-4">Limpar filtros</button></div></details><div className="px-3 py-5 text-[11px] leading-5 text-[#839087]">Até 20 achados por categoria.<br />Uma seleção para explorar com calma.</div></aside>
+    <div className="mb-4 flex items-center justify-between lg:hidden"><p className="text-xs text-[#6f7d73]">{props.resultCount} ofertas encontradas</p><Sheet open={open} onOpenChange={setOpen}><SheetTrigger className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#dce5da] bg-white px-4 text-xs font-bold text-[#355344]"><SlidersHorizontal size={15} />Filtros</SheetTrigger><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto rounded-t-3xl border-[#e1e7de] bg-[#fafbf6] text-[#243e30]"><SheetHeader><SheetTitle>Encontre o seu CATch</SheetTitle><SheetDescription>Escolha as lojas e as condições da sua busca.</SheetDescription></SheetHeader><div className="px-5 pb-5"><FilterFields {...props} /><div className="mt-5 flex gap-3"><button type="button" onClick={props.onReset} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border px-4 text-sm"><X size={15} />Limpar</button><button type="button" onClick={() => setOpen(false)} className="min-h-12 flex-1 rounded-xl bg-[#245b46] text-sm font-bold text-white">Ver {props.resultCount} ofertas</button></div></div></SheetContent></Sheet></div>
   </>;
 });

@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "test": "node --test automation/test/*.test.mjs",
+    "test": "node --test automation/test/*.test.mjs tests/*.test.mjs",
     "check": "pnpm lint && pnpm test && pnpm build",
     "db:generate": "drizzle-kit generate"
   },

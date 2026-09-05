@@ -1,8 +1,21 @@
 export type Region = 'brasil' | 'global';
 export type Category = 'Automotivo' | 'Performance' | 'Longevidade';
+export type Marketplace = 'amazon-br' | 'amazon-us' | 'mercado-livre';
+
+export type OfferAlternative = {
+  id: string;
+  retailer: string;
+  network: Marketplace;
+  price: number;
+  currency: 'BRL' | 'USD';
+  shippingCost?: number | null;
+  shippingLabel?: string;
+  lastChecked?: string;
+};
 
 export type Offer = {
   id: string;
+  productId?: string;
   slug: string;
   region: Region;
   category: Category;
@@ -18,9 +31,13 @@ export type Offer = {
   rating?: number;
   ratingCount?: number;
   shippingLabel?: string;
-  sourceUrl: string;
-  network: 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'aliexpress' | 'iherb' | 'generic';
-  affiliateUrl?: string;
+  shippingCost?: number | null;
+  network: Marketplace;
+  priceBasis: 'list' | 'history30d';
+  historyVerifiedAt?: string;
+  lastChecked?: string;
+  availability: 'in_stock' | 'unknown' | 'out_of_stock';
+  alternatives?: OfferAlternative[];
   verified: boolean;
   verifiedAt?: string;
   discountPercent: number;
@@ -34,38 +51,39 @@ export function categoryFromDatabase(category: string, subcategory: string): Cat
   return 'Longevidade';
 }
 
-export function networkFromDatabase(platform: string): Offer['network'] {
-  const networks: Record<string, Offer['network']> = {
+export function networkFromDatabase(platform: string): Marketplace | null {
+  const networks: Record<string, Marketplace> = {
     AMAZON_BR: 'amazon-br',
     AMAZON_US: 'amazon-us',
     MERCADO_LIVRE: 'mercado-livre',
-    ALIEXPRESS: 'aliexpress',
-    IHERB: 'iherb',
+    amazon_br: 'amazon-br',
+    amazon_us: 'amazon-us',
+    mercado_livre: 'mercado-livre',
   };
-  return networks[platform] ?? 'generic';
+  return networks[platform] ?? null;
 }
 
 export function retailerFromDatabase(platform: string) {
   const retailers: Record<string, string> = {
     AMAZON_BR: 'Amazon Brasil',
-    AMAZON_US: 'Amazon',
+    AMAZON_US: 'Amazon EUA',
     MERCADO_LIVRE: 'Mercado Livre',
-    ALIEXPRESS: 'AliExpress',
-    IHERB: 'iHerb',
-    FARMACIA: 'Farmácia parceira',
-    AUTOPECAS: 'Autopeças parceira',
+    amazon_br: 'Amazon Brasil',
+    amazon_us: 'Amazon EUA',
+    mercado_livre: 'Mercado Livre',
   };
   return retailers[platform] ?? platform.replaceAll('_', ' ');
 }
 
 export function limitOffersPerCategory(input: Offer[], limit = CATEGORY_LIMIT) {
-  const counts = new Map<Category, number>();
+  const counts = new Map<string, number>();
   return [...input]
-    .sort((a, b) => b.discountPercent - a.discountPercent || b.price - a.price)
+    .sort((a, b) => b.discountPercent - a.discountPercent || a.price - b.price)
     .filter((offer) => {
-      const current = counts.get(offer.category) ?? 0;
+      const bucket = `${offer.region}:${offer.category}`;
+      const current = counts.get(bucket) ?? 0;
       if (current >= limit) return false;
-      counts.set(offer.category, current + 1);
+      counts.set(bucket, current + 1);
       return true;
     });
 }

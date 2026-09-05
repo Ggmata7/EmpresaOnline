@@ -1,7 +1,11 @@
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
-  out: './drizzle',
+  // ./drizzle contains historical SQLite snapshots; never apply it to production.
+  out: './database/drizzle-postgres',
   schema: './db/schema.ts',
-  dialect: 'sqlite',
+  dialect: 'postgresql',
+  dbCredentials: { url: process.env.DATABASE_URL ?? '' },
+  strict: true,
+  verbose: false,
 });

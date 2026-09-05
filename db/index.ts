@@ -1,29 +1,33 @@
+import 'server-only';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
 
-declare global {
-  // Evita reabrir múltiplos pools de conexão durante reloads ou concorrência
-  var _postgresClient: postgres.Sql | undefined;
-}
-
-const connectionString = process.env.DATABASE_URL || '';
-
-const client =
-  global._postgresClient ||
-  postgres(connectionString, {
+function createDatabase() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is required for normalized catalog writes.');
+  const endpoint = new URL(connectionString);
+  if (!['postgres:', 'postgresql:'].includes(endpoint.protocol)) throw new Error('DATABASE_URL must use PostgreSQL.');
+  const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(endpoint.hostname);
+  const client = postgres(connectionString, {
     prepare: false,
-    max: 10, // Controla o limite de conexões por instância serverless
+    max: 3,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    ssl: local ? false : 'verify-full',
+    connection: { application_name: 'catch', statement_timeout: 15000 },
   });
-
-if (process.env.NODE_ENV !== 'production') {
-  global._postgresClient = client;
+  return { client, db: drizzle(client, { schema }) };
 }
 
-export const db = drizzle(client, { schema });
+declare global {
+  var _catchDatabase: ReturnType<typeof createDatabase> | undefined;
+}
 
+// Lazy initialization avoids opening sockets at build time; one pool per warm instance.
 export function getDb() {
-  return db;
+  globalThis._catchDatabase ??= createDatabase();
+  return globalThis._catchDatabase.db;
 }
 
 export { schema };
