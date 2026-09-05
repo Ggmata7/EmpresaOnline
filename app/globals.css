@@ -8,29 +8,18 @@
   --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground); --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground); --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground); --color-destructive: var(--destructive); --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
-  --font-sans: var(--font-ui); --font-mono: var(--font-code); --font-display: var(--font-display); --radius-sm: calc(var(--radius) * 0.6); --radius-md: calc(var(--radius) * 0.8); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) * 1.4); --radius-2xl: calc(var(--radius) * 1.8);
+  --font-sans: var(--font-ui); --radius-sm: .5rem; --radius-md: .625rem; --radius-lg: .75rem; --radius-xl: 1rem; --radius-2xl: 1.25rem;
 }
 :root {
-  --background: oklch(0.115 0.018 150); --foreground: oklch(0.97 0.01 145); --card: oklch(0.155 0.021 150); --card-foreground: oklch(0.97 0.01 145);
-  --popover: oklch(0.15 0.02 150); --popover-foreground: oklch(0.97 0.01 145); --primary: oklch(0.88 0.2 125); --primary-foreground: oklch(0.12 0.025 145);
-  --secondary: oklch(0.24 0.025 150); --secondary-foreground: oklch(0.94 0.01 145); --muted: oklch(0.21 0.02 150); --muted-foreground: oklch(0.71 0.02 150);
-  --accent: oklch(0.82 0.12 210); --accent-foreground: oklch(0.12 0.025 145); --destructive: oklch(0.65 0.22 25); --border: oklch(1 0 0 / 12%); --input: oklch(1 0 0 / 12%); --ring: oklch(0.88 0.2 125);
-  --radius: 0.75rem; --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --font-display: "Arial Narrow", "Roboto Condensed", Impact, sans-serif; --font-code: "Cascadia Code", Consolas, monospace;
+  --background: #f1f3f5; --foreground: #172133; --card: #fff; --card-foreground: #172133;
+  --popover: #fff; --popover-foreground: #172133; --primary: #2563eb; --primary-foreground: #fff;
+  --secondary: #f1f5f9; --secondary-foreground: #172133; --muted: #f1f5f9; --muted-foreground: #64748b;
+  --accent: #eff6ff; --accent-foreground: #1d4ed8; --destructive: #dc2626; --border: #e2e8f0; --input: #cbd5e1; --ring: #3b82f6;
+  --radius: .75rem; --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 * { box-sizing: border-box; }
-html { background: var(--background); color-scheme: dark; }
-body { margin: 0; min-width: 320px; background: radial-gradient(circle at 18% 0%, rgb(183 244 60 / 0.08), transparent 28rem), radial-gradient(circle at 90% 12%, rgb(103 232 249 / 0.07), transparent 32rem), var(--background); color: var(--foreground); font-family: var(--font-ui); }
+html { background: var(--background); color-scheme: light; }
+body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-ui); text-rendering: optimizeLegibility; }
 button, input { font: inherit; }
-.font-display { font-family: var(--font-display); }
-.text-gradient { background: linear-gradient(105deg, #b7f43c 10%, #67e8f9 88%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.stats-panel { border: 1px solid rgb(255 255 255 / 0.1); background: linear-gradient(135deg, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.015)); }
-.metric-number { font-family: var(--font-display); font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
-.metric-label { margin-top: 0.3rem; color: var(--muted-foreground); font-size: 0.75rem; }
-.filter-pill { display: inline-flex; height: 2.5rem; flex: none; align-items: center; gap: 0.45rem; border: 1px solid rgb(255 255 255 / 0.1); border-radius: 0.75rem; padding: 0 0.8rem; color: var(--muted-foreground); cursor: pointer; transition: 160ms ease; }
-.filter-pill:hover { color: white; border-color: rgb(255 255 255 / 0.2); }
-.filter-pill-active { border-color: rgb(183 244 60 / 0.45); background: rgb(183 244 60 / 0.1); color: #d9ff8b; }
-.offer-card { transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
-.offer-card:hover { transform: translateY(-3px); border-color: rgb(183 244 60 / 0.3); box-shadow: 0 24px 65px rgb(0 0 0 / 0.28); }
-.product-strip { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: radial-gradient(circle at 50% 45%, rgb(183 244 60 / 0.09), transparent 55%), rgb(10 15 12); }
-.hide-scrollbar { scrollbar-width: none; } .hide-scrollbar::-webkit-scrollbar { display: none; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+button, a { -webkit-tap-highlight-color: transparent; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

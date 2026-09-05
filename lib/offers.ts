@@ -16,6 +16,8 @@ export type Offer = {
   expiresAt?: string;
   imageUrl?: string;
   rating?: number;
+  ratingCount?: number;
+  shippingLabel?: string;
   sourceUrl: string;
   network: 'amazon-br' | 'amazon-us' | 'mercado-livre' | 'aliexpress' | 'iherb' | 'generic';
   affiliateUrl?: string;

@@ -1,58 +1,49 @@
-'use client';
-
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Check, Clock3, Copy, ShieldCheck, Star } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import Image from 'next/image';
+import { ArrowRight, BadgeCheck, Star, Truck } from 'lucide-react';
 import type { Offer } from '@/lib/offers';
 
-const formatter = (currency: Offer['currency']) => new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency });
-function remainingTime(expiresAt: string) {
-  const remaining = Math.max(0, new Date(expiresAt).getTime() - Date.now());
-  const hours = Math.floor(remaining / 3_600_000);
-  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
-  const seconds = Math.floor((remaining % 60_000) / 1000);
-  return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
-}
+const blurDataUrl =
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjZjVmNWY1Ii8+PC9zdmc+';
 
-export function OfferCard({ offer }: { offer: Offer }) {
-  const [countdown, setCountdown] = useState('--h --m --s');
-  const [copied, setCopied] = useState(false);
-  const discount = offer.discountPercent || Math.round((1 - offer.price / offer.oldPrice) * 100);
-  const money = useMemo(() => formatter(offer.currency), [offer.currency]);
-  useEffect(() => {
-    if (!offer.expiresAt) return;
-    setCountdown(remainingTime(offer.expiresAt));
-    const timer = window.setInterval(() => setCountdown(remainingTime(offer.expiresAt as string)), 1000);
-    return () => window.clearInterval(timer);
-  }, [offer.expiresAt]);
-  async function copyCoupon() { if (!offer.coupon) return; await navigator.clipboard.writeText(offer.coupon); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }
+const currency = (code: Offer['currency']) =>
+  new Intl.NumberFormat(code === 'BRL' ? 'pt-BR' : 'en-US', {
+    style: 'currency', currency: code, maximumFractionDigits: 2,
+  });
+
+export function ProductCard({ offer, priority = false }: { offer: Offer; priority?: boolean }) {
+  const discount = Math.max(0, Math.round(offer.discountPercent || (1 - offer.price / offer.oldPrice) * 100));
+  const money = currency(offer.currency);
 
   return (
-    <article className="offer-card group overflow-hidden rounded-[1.35rem] border border-white/10 bg-card">
-      <div className="product-strip" role="img" aria-label={`Imagem de ${offer.title}`}>
-        {offer.imageUrl ? <img src={offer.imageUrl} alt="" className="absolute inset-0 size-full object-contain p-5" loading="lazy" referrerPolicy="no-referrer" /> : null}
-        <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
-          <Badge className="h-7 border-0 bg-primary px-2.5 font-black text-black">-{discount}%</Badge>
-          <Badge variant="outline" className="h-7 border-white/15 bg-black/45 text-white backdrop-blur-md"><ShieldCheck className="size-3.5 text-emerald-300" />verificada</Badge>
-        </div>
+    <article className="group flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-within:ring-2 focus-within:ring-blue-500">
+      <div className="relative aspect-[4/3] overflow-hidden border-b border-slate-100 bg-white">
+        {offer.imageUrl ? (
+          <Image src={offer.imageUrl} alt={offer.title} fill priority={priority} loading={priority ? 'eager' : 'lazy'} placeholder="blur" blurDataURL={blurDataUrl} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]" />
+        ) : <div className="absolute inset-0 grid place-items-center bg-slate-50 text-xs text-slate-400">Imagem indisponível</div>}
+        <span className="absolute left-3 top-3 rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">{discount}% OFF</span>
       </div>
-      <div className="p-5">
-        <div className="mb-3 flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-[0.12em] text-primary">{offer.category}</span><span className="flex items-center gap-2 text-xs text-muted-foreground">{offer.rating ? <span className="flex items-center gap-1 text-amber-300"><Star className="size-3 fill-current" />{offer.rating.toFixed(1)}</span> : null}{offer.retailer}</span></div>
-        <h3 className="min-h-[3.5rem] font-display text-lg font-bold leading-snug tracking-[-0.02em]">{offer.title}</h3>
-        <div className="mt-5 flex items-end justify-between gap-3">
-          <div><p className="text-sm text-muted-foreground line-through">{money.format(offer.oldPrice)}</p><p className="font-display text-3xl font-black tracking-[-0.045em] text-white">{money.format(offer.price)}</p></div>
-          {offer.expiresAt ? <div className="rounded-lg bg-white/[0.045] px-2.5 py-2 text-right"><p className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground"><Clock3 className="size-3" /> termina em</p><p className="mt-0.5 font-mono text-xs font-semibold text-amber-300">{countdown}</p></div> :
-            <div className="rounded-lg bg-white/[0.045] px-2.5 py-2 text-right text-xs text-muted-foreground">Preço verificado</div>}
+
+      <div className="flex flex-1 flex-col p-4">
+        <div className="mb-2 flex items-center justify-between gap-2 text-xs text-slate-500">
+          <span className="truncate font-medium">{offer.retailer}</span>
+          {offer.rating ? <span className="flex shrink-0 items-center gap-1" aria-label={`Nota ${offer.rating} de 5`}><Star className="size-3.5 fill-amber-400 text-amber-400" /><strong className="font-semibold text-slate-700">{offer.rating.toFixed(1)}</strong>{offer.ratingCount ? <span>({offer.ratingCount.toLocaleString('pt-BR')})</span> : null}</span> : null}
         </div>
-        {offer.coupon && <button type="button" onClick={copyCoupon} className="mt-4 flex w-full items-center justify-between rounded-xl border border-dashed border-primary/35 bg-primary/[0.06] px-3 py-2.5 text-left transition hover:border-primary/70 hover:bg-primary/[0.1]">
-          <span><span className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Cupom</span><span className="font-mono text-sm font-bold text-primary">{offer.coupon}</span></span>
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">{copied ? <Check className="size-4" /> : <Copy className="size-4" />}{copied ? 'Copiado' : 'Copiar'}</span>
-        </button>}
-        <Button nativeButton={false} className="mt-4 h-11 w-full rounded-xl bg-white font-bold text-black hover:bg-primary" render={<a href={`/api/click/${offer.slug}`} target="_blank" rel="nofollow sponsored noopener" />}>
-          Ver oferta com desconto <ArrowUpRight className="size-4" />
-        </Button>
+        <h3 className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-slate-800 sm:text-[15px]">{offer.title}</h3>
+        <div className="mt-4">
+          <p className="text-xs text-slate-400 line-through">{money.format(offer.oldPrice)}</p>
+          <p className="text-2xl font-semibold tracking-tight text-slate-950">{money.format(offer.price)}</p>
+          <p className="mt-1 text-xs font-medium text-emerald-700">{discount > 0 ? `${discount}% abaixo da média de 30 dias` : 'Preço verificado'}</p>
+        </div>
+        <div className="mt-3 min-h-10 space-y-1 text-xs">
+          {offer.shippingLabel ? <p className="flex items-center gap-1.5 font-semibold text-emerald-700"><Truck className="size-3.5" /> {offer.shippingLabel}</p> : null}
+          <p className="flex items-center gap-1.5 text-slate-500"><BadgeCheck className="size-3.5 text-blue-600" /> Loja parceira · preço verificado</p>
+        </div>
+        <a href={`/api/click/${offer.slug}`} target="_blank" rel="nofollow sponsored noopener" className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-label={`Ver oferta de ${offer.title} em ${offer.retailer}`}>
+          Ver oferta <ArrowRight className="size-4" />
+        </a>
       </div>
     </article>
   );
 }
+
+export const OfferCard = ProductCard;
