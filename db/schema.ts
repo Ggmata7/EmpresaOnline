@@ -9,6 +9,8 @@ export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),
   legacyId: text('legacy_id'),
   title: text('title').notNull(),
+  normalizedTitle: text('normalized_title').generatedAlwaysAs(sql`public.catch_normalize_title(title)`),
+  isInternational: boolean('is_international').default(false).notNull(),
   slug: text('slug').notNull(),
   description: text('description'),
   category: text('category').notNull(),
@@ -16,7 +18,7 @@ export const products = pgTable('products', {
   imageUrl: text('image_url'),
   createdAt: time('created_at').defaultNow().notNull(),
   updatedAt: time('updated_at').defaultNow().notNull(),
-}, (table) => [uniqueIndex('products_slug_unique').on(table.slug), uniqueIndex('products_legacy_id_unique').on(table.legacyId), index('products_category_idx').on(table.category)]);
+}, (table) => [uniqueIndex('products_slug_unique').on(table.slug), uniqueIndex('products_legacy_id_unique').on(table.legacyId), index('products_category_idx').on(table.category), index('products_match_idx').on(table.isInternational, table.category, table.normalizedTitle)]);
 
 export const offers = pgTable('offers', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -27,6 +29,8 @@ export const offers = pgTable('offers', {
   sourceUrl: text('source_url').notNull(),
   // Raw destinations are server-only: RLS/grants deny public reads; UI uses /api/c/[slug].
   affiliateUrl: text('affiliate_url'),
+  // Compatibility aliases: existing redirects and sync retain their current column names.
+  url: text('url').generatedAlwaysAs(sql`affiliate_url`),
   rawAffiliateId: text('raw_affiliate_id'),
   originalPrice: numeric('original_price', { precision: 14, scale: 2 }),
   currentPrice: numeric('current_price', { precision: 14, scale: 2 }).notNull(),
@@ -43,6 +47,7 @@ export const offers = pgTable('offers', {
   isDealOfTheDay: boolean('is_deal_of_the_day').default(false).notNull(),
   isActive: boolean('is_active').default(false).notNull(),
   lastCheckedAt: time('last_checked_at'),
+  lastChecked: time('last_checked').generatedAlwaysAs(sql`last_checked_at`),
   expiresAt: time('expires_at'),
   createdAt: time('created_at').defaultNow().notNull(),
   updatedAt: time('updated_at').defaultNow().notNull(),

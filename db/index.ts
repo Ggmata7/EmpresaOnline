@@ -14,7 +14,8 @@ function createDatabase() {
     max: 3,
     idle_timeout: 20,
     connect_timeout: 10,
-    ssl: local ? false : 'verify-full',
+    // Explicit deployment choice: encrypted transport without certificate verification.
+    ssl: local ? false : { rejectUnauthorized: false },
     connection: { application_name: 'catch', statement_timeout: 15000 },
   });
   return { client, db: drizzle(client, { schema }) };

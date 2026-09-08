@@ -2,7 +2,7 @@
   "name": "affiliate-arbitrage-automation",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24" },
   "scripts": {
     "start": "node src/run-cycle.mjs",
     "seed": "node src/seed-catalog.mjs",
