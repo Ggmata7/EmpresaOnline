@@ -3,7 +3,7 @@ name: Affiliate catalog cycle
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '0 */6 * * *'
 
 concurrency:
   group: affiliate-catalog-production
@@ -27,25 +27,37 @@ jobs:
           PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/sync-catalog.mjs
+
   curate:
     if: vars.CATCH_SYNC_ENABLED != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AMAZON_BR_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_ID }}
+      AMAZON_BR_CREATORS_CLIENT_SECRET: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_SECRET }}
+      AMAZON_US_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_US_CREATORS_CLIENT_ID }}
+      AMAZON_US_CREATORS_CLIENT_SECRET: ${{ secrets.AMAZON_US_CREATORS_CLIENT_SECRET }}
+      MERCADO_LIVRE_ACCESS_TOKEN: ${{ secrets.MERCADO_LIVRE_ACCESS_TOKEN }}
     defaults:
       run:
         working-directory: automation
     steps:
       - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
           run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+
       - name: Validate automation
         run: pnpm check && pnpm test
+
       - name: Curate offers
         env:
           SOURCES_JSON: ${{ secrets.SOURCES_JSON }}
