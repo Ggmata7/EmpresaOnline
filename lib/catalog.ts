@@ -1,7 +1,10 @@
 import 'server-only';
 
 import { categoryFromDatabase, limitOffersPerCategory, networkFromDatabase, retailerFromDatabase, type Offer, type Region } from '@/lib/offers';
-import { buildAffiliateUrl, selectRedirectOffer, type RedirectCandidate } from '@/lib/affiliate-links';
+import { buildAffiliateUrl, type RedirectCandidate } from '@/lib/affiliate-links';
+import { lowestPriceFirst } from '@/lib/product-comparison';
+import { sql } from 'drizzle-orm';
+import { getDb } from '@/db';
 
 type LegacyRow = {
   id: string; slug: string; plataforma: string; titulo: string; categoria: string; subcategoria: string;
@@ -11,6 +14,7 @@ type LegacyRow = {
   cupons?: Array<{ codigo: string; valido_ate: string | null; ativo: boolean }>;
 };
 type ProductRow = {
+  is_international: boolean;
   id: string; slug: string; title: string; category: Offer['category']; subcategory: string; image_url: string | null;
 };
 type NormalizedRow = {
@@ -22,7 +26,7 @@ type NormalizedRow = {
 };
 type CatalogEntry = { display: Offer; destination: RedirectCandidate };
 const legacySelect = 'id,slug,plataforma,titulo,categoria,subcategoria,regiao,moeda,url_original,url_afiliado,imagem_url,avaliacao,preco_atual,preco_medio_30d,oferta_valida_ate,atualizado_em,cupons(codigo,valido_ate,ativo)';
-const normalizedSelect = 'id,product_id,platform,source_url,affiliate_url,original_price,current_price,currency,reference_price_kind,history_verified_at,rating,rating_count,shipping_price,shipping_label,in_stock,last_checked_at,expires_at,products!inner(id,slug,title,category,subcategory,image_url)';
+const normalizedSelect = 'id,product_id,platform,source_url,affiliate_url,original_price,current_price,currency,reference_price_kind,history_verified_at,rating,rating_count,shipping_price,shipping_label,in_stock,last_checked_at,expires_at,products!inner(id,slug,title,category,subcategory,image_url,is_international)';
 
 export class CatalogUnavailableError extends Error {}
 
@@ -76,6 +80,7 @@ function fromLegacy(row: LegacyRow): CatalogEntry | null {
 function fromNormalized(row: NormalizedRow): CatalogEntry | null {
   const network = networkFromDatabase(row.platform);
   if (!network || !row.products || (network === 'amazon-us' ? row.currency !== 'USD' : row.currency !== 'BRL')) return null;
+  if (row.products.is_international !== (network === 'amazon-us')) return null;
   const price = Number(row.current_price);
   const reference = validPrice(row.original_price) ?? price;
   const historyVerifiedAt = row.reference_price_kind === 'average_30d' ? row.history_verified_at || undefined : undefined;
@@ -83,6 +88,7 @@ function fromNormalized(row: NormalizedRow): CatalogEntry | null {
   const shippingCost = validPrice(row.shipping_price) ?? null;
   const display: Offer = {
     id: row.id, productId: row.product_id, slug: row.products.slug, region: network === 'amazon-us' ? 'global' : 'brasil',
+    isInternational: row.products.is_international,
     category: row.products.category, subcategory: row.products.subcategory || '', title: row.products.title,
     retailer: retailerFromDatabase(row.platform), imageUrl: row.products.image_url || undefined,
     price, oldPrice: reference, currency: row.currency, network, priceBasis: historyVerifiedAt ? 'history30d' : 'list',
@@ -97,6 +103,18 @@ function fromNormalized(row: NormalizedRow): CatalogEntry | null {
 }
 
 async function requestRows(normalized: boolean, slug?: string, region?: Region): Promise<CatalogEntry[] | null> {
+  if (normalized && process.env.DATABASE_URL) {
+    // Server-only database reads avoid depending on an additional REST service key.
+    const rows = await getDb().execute<{ row: NormalizedRow }>(sql`
+      select to_jsonb(o) || jsonb_build_object('products', to_jsonb(p)) as row
+      from public.offers o join public.products p on p.id = o.product_id
+      where o.is_active = true and o.current_price > 0
+        and ${slug ? sql`p.slug = ${slug}` : sql`true`}
+        and ${region === 'global' ? sql`o.platform = 'amazon_us'` : region === 'brasil' ? sql`o.platform in ('amazon_br', 'mercado_livre')` : sql`true`}
+      order by o.discount_percentage desc, o.id limit 1000`);
+    const entries = rows.map(({ row }) => fromNormalized(row)).filter((entry): entry is CatalogEntry => Boolean(entry));
+    return slug ? entries : entries.filter(displayable);
+  }
   const { endpoint, key } = config(normalized);
   const params = new URLSearchParams({ select: normalized ? normalizedSelect : legacySelect, limit: '1000' });
   if (normalized) {
@@ -135,7 +153,7 @@ async function requestRows(normalized: boolean, slug?: string, region?: Region):
 }
 
 async function loadEntries(slug?: string, region?: Region) {
-  if (process.env.CATALOG_SCHEMA_VERSION === '2') {
+  if (process.env.CATALOG_SCHEMA_VERSION !== '1') {
     const entries = await requestRows(true, slug, region);
     if (entries) return entries;
   }
@@ -144,13 +162,12 @@ async function loadEntries(slug?: string, region?: Region) {
 
 function groupProducts(entries: CatalogEntry[]) {
   const groups = new Map<string, CatalogEntry[]>();
-  for (const entry of entries) {
+  for (const entry of entries.filter(displayable)) {
     const key = `${entry.display.productId}:${entry.display.region}`;
     groups.set(key, [...(groups.get(key) || []), entry]);
   }
   return Array.from(groups.values()).map((group) => {
-    const selected = selectRedirectOffer(group.map((entry) => entry.destination), group[0].display.region === 'brasil' ? 'BR' : 'US');
-    const best = group.find((entry) => entry.destination.id === selected?.id) || group[0];
+    const best = [...group].sort((a, b) => lowestPriceFirst(a.display, b.display))[0];
     return { ...best.display, alternatives: group.map(({ display }) => ({
       id: display.id, retailer: display.retailer, network: display.network, price: display.price,
       currency: display.currency as 'BRL' | 'USD', shippingCost: display.shippingCost,

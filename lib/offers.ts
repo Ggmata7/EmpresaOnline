@@ -18,6 +18,7 @@ export type Offer = {
   productId?: string;
   slug: string;
   region: Region;
+  isInternational?: boolean;
   category: Category;
   subcategory: string;
   title: string;
