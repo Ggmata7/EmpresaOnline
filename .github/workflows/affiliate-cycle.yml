@@ -34,6 +34,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       COLLECTOR_MODE: public
+      COLLECTOR_DISCOVERY: 'true'
+      COLLECTOR_DISCOVERY_PAGES: '2'
       AMAZON_BR_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_ID }}
       AMAZON_BR_CREATORS_CLIENT_SECRET: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_SECRET }}
       AMAZON_US_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_US_CREATORS_CLIENT_ID }}
@@ -68,7 +70,7 @@ jobs:
           AMAZON_BR_TAG: ${{ secrets.AMAZON_BR_TAG }}
           AMAZON_US_TAG: ${{ secrets.AMAZON_US_TAG }}
           MIN_REAL_DISCOUNT_PERCENT: '15'
-          MAX_OFFERS_PER_CATEGORY: '20'
+          MAX_OFFERS_PER_CATEGORY: '100'
           MAX_CONCURRENCY: '3'
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start

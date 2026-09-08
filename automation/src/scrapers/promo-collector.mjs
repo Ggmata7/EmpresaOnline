@@ -1,4 +1,8 @@
+import { classifyCategory as category } from '../../../lib/offers.ts';
+import { UNIT_PRICE, isUnitPrice, amazonReferencePrice } from './price-guards.mjs';
+import { createMarketplaceAdapter } from '../../../lib/affiliates/adapters/index.ts';
 import { load } from 'cheerio';
+import { discoverSources } from './discovery.mjs';
 import { readFile } from 'node:fs/promises';
 
 export const SOURCES = [
@@ -16,6 +20,7 @@ const headers = {
 
 export function money(value, currency) {
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+  if (UNIT_PRICE.test(String(value ?? ''))) return null;
   let text = String(value ?? '').trim().replace(/(?:R\$|US\$|\$|BRL|USD|\s)/g, '');
   if (!text || /[^0-9.,]/.test(text)) return null;
   // Currency is not locale: amazon.com may return Portuguese decimal commas for USD.
@@ -27,13 +32,6 @@ export function money(value, currency) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
-function category(title) {
-  if (/creatina|whey|prote[ií]na|fitness|yoga|dumbbell|resistance band|halter|treino/i.test(title)) return 'Performance';
-  if (/automotiv|pneu|car tire|inflator|compressor|dash.?cam|carregador veicular|oil filter|filtro.*[oó]leo/i.test(title)) return 'Automotivo';
-  if (/vitamina|suplemento|omega|col[aá]geno/i.test(title)) return 'Longevidade';
-  if (/mouse|teclado|keyboard|headphone|fone|earbud|tablet|notebook|laptop|smart|usb|charger|carregador|monitor|ssd|camera|c[aâ]mera|gadget|speaker|bluetooth|echo dot|fire tv/i.test(title)) return 'Tecnologia';
-  return null;
-}
 
 export async function fetchPage(source, fetcher = fetch) {
   // Follow normal same-origin campaigns only, never login/challenge/off-domain redirects.
@@ -69,7 +67,7 @@ export function parsePromotions(html, source) {
     const title = String(row.title || '').replace(/\s+/g, ' ').trim();
     const group = category(title);
     if (!group) return;
-    row.originalPrice ??= row.currentPrice; // Unknown reference price is zero discount, never an invented margin.
+    row.originalPrice = row.originalPrice > row.currentPrice ? row.originalPrice : row.currentPrice; // Unknown reference price is zero discount, never an invented margin.
     if (!row.inStock || !row.currentPrice || !row.originalPrice || row.originalPrice < row.currentPrice || row.currency !== source.currency) return;
     try {
       const url = new URL(row.sourceUrl, source.url);
@@ -88,7 +86,7 @@ export function parsePromotions(html, source) {
       candidates.push({ title, category: group, imageUrl: image.toString(), sourceUrl: url.toString(), externalId,
         platform: source.platform, currency: source.currency, originalPrice: row.originalPrice, currentPrice: row.currentPrice,
         inStock: true, checkedAt: new Date(), expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
-        referenceProvenance: `public_promo:${source.platform}` });
+        referenceProvenance: `public_promo:v2:${source.platform}` });
     } catch { /* Incomplete or unsafe cards are not offers. */ }
   }
   function visit(node, depth = 0) {
@@ -127,7 +125,7 @@ export function parsePromotions(html, source) {
     add({ title: card.find(ml ? '.poly-component__title, .promotion-item__title, .ui-search-item__title' : 'h2, [data-testid="product-card-title"]').first().text() || link.attr('title'),
       imageUrl: card.find('img').first().attr('data-src') || card.find('img').first().attr('src'), sourceUrl: link.attr('href'),
       currentPrice: ml ? mlMoney(priceNode) : money(priceNode.text(), source.currency),
-      originalPrice: ml ? mlMoney(oldNode) : money(oldNode.text(), source.currency), currency: source.currency,
+      originalPrice: ml ? mlMoney(oldNode) : amazonReferencePrice($, card, money, source.currency), currency: source.currency,
       inStock: available && !/esgotado|indispon[ií]vel|out of stock|currently unavailable|prime exclusive|somente prime|subscribe|assinatura/i.test(text) });
   });
   return [...new Map(candidates.map(row => [row.externalId, row])).values()];
@@ -156,11 +154,11 @@ export function parseAmazonProduct(html, source) {
   const declaredAsin = $('#ASIN').attr('value');
   if (declaredAsin && declaredAsin !== requestedAsin) return [];
   const structured = parsePromotions(html, source).filter(row => row.externalId === requestedAsin);
-  if (structured.length) return structured.slice(0, 1);
+
   const title = $('#productTitle').text().trim() || $('meta[property="og:title"]').attr('content');
   const image = $('#landingImage').attr('data-old-hires') || $('#landingImage').attr('src') || $('meta[property="og:image"]').attr('content');
   const priceBox = $('#corePriceDisplay_desktop_feature_div, #corePrice_feature_div').first();
-  const priceNode = priceBox.find('.a-price:not(.a-text-price)').first();
+  const priceNode = priceBox.find('.a-price:not(.a-text-price)').filter((_, node) => !isUnitPrice($(node))).first();
   // Only the main purchase price; recommendations, installments and subscriptions are excluded.
   const priceText = priceNode.find('.a-offscreen').first().text() ||
     `${priceNode.find('.a-price-whole').text().replace(/[.,]$/, '')}${source.currency === 'BRL' ? ',' : '.'}${priceNode.find('.a-price-fraction').text() || '00'}`;
@@ -171,13 +169,14 @@ export function parseAmazonProduct(html, source) {
   if (/prime exclusive|somente prime|subscribe|assinatura|programe e poupe/i.test(priceBox.text())) return [];
   const availability = $('#availability').text();
   const available = /em estoque|in stock|dispon[ií]vel/i.test(availability) && !/indispon[ií]vel|unavailable|out of stock/i.test(availability);
-  if (!available) return [];
+  if (!available) return structured.map(row => ({ ...row, originalPrice: row.currentPrice }));
   const currentPrice = money(priceText, source.currency);
-  const originalPrice = money(priceBox.find('.a-text-price .a-offscreen, .basisPrice .a-offscreen').first().text(), source.currency) ?? currentPrice;
+  const originalPrice = amazonReferencePrice($, priceBox, money, source.currency) ?? currentPrice;
   const data = { '@type': 'Product', name: title, image, url: source.url,
     offers: { '@type': 'Offer', price: currentPrice, priceCurrency: source.currency, availability: 'https://schema.org/InStock',
       priceSpecification: { priceType: 'https://schema.org/ListPrice', price: originalPrice } } };
-  return parsePromotions(`<script type="application/ld+json">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script>`, source);
+  return parsePromotions(`<script type="application/ld+json">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script>`, source).map(row => ({ ...row,
+    priceEvidence: { parser: 'amazon-v2', reference: originalPrice > currentPrice ? originalPrice : null, unitPriceExcluded: true } }));
 }
 
 export async function configuredSources() {
@@ -185,7 +184,7 @@ export async function configuredSources() {
   return [SOURCES[0], ...['amazon_br', 'amazon_us'].flatMap(platform => {
     const asins = watchlist[platform];
     if (!Array.isArray(asins) || !asins.every(asin => /^[A-Z0-9]{10}$/.test(asin))) throw new Error('invalid_watchlist');
-    return [...new Set(asins)].slice(0, 20).map(asin => ({ platform, currency: platform === 'amazon_br' ? 'BRL' : 'USD',
+    return [...new Set(asins)].slice(0, 100).map(asin => ({ platform, currency: platform === 'amazon_br' ? 'BRL' : 'USD',
       url: `https://www.amazon.${platform === 'amazon_br' ? 'com.br' : 'com'}/dp/${asin}` }));
   })];
 }
@@ -193,7 +192,9 @@ export async function configuredSources() {
 export async function collectPromotions({ fetcher = fetch, sources = SOURCES } = {}) {
   const rows = [], diagnostics = [];
   const blockedPlatforms = new Set();
+  const deadline = Date.now() + 15 * 60 * 1000;
   for (const source of sources) {
+    if (Date.now() >= deadline) { diagnostics.push({ platform: source.platform, status: 'deferred_budget', captured: 0 }); break; }
     if (blockedPlatforms.has(source.platform)) {
       diagnostics.push({ platform: source.platform, status: 'skipped_after_block', captured: 0 });
       continue;
@@ -201,12 +202,12 @@ export async function collectPromotions({ fetcher = fetch, sources = SOURCES } =
     try {
       let offers;
       if (source.platform === 'mercado_livre') {
-        const response = await fetcher(source.url, { headers: { Accept: 'application/json', 'Accept-Language': 'pt-BR' },
+        const response = await fetcher(source.url, { headers: { Accept: 'application/json', 'Accept-Language': 'pt-BR', ...(process.env.MERCADO_LIVRE_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.MERCADO_LIVRE_ACCESS_TOKEN}` } : {}) },
           redirect: 'error', signal: AbortSignal.timeout(20000) });
         if (!response.ok) throw new Error(`http_${response.status}`);
-        offers = parseMercadoLivreSearch(await response.json());
+        offers = createMarketplaceAdapter(source.platform, parseMercadoLivreSearch).parseOffer(await response.json());
       } else {
-        offers = parseAmazonProduct(await fetchPage(source, fetcher), source);
+        offers = createMarketplaceAdapter(source.platform, html => parseAmazonProduct(html, source)).parseOffer(await fetchPage(source, fetcher));
       }
       rows.push(...offers);
       diagnostics.push({ platform: source.platform, status: offers.length ? 'collected' : 'no_verified_offers', captured: offers.length });
@@ -221,8 +222,17 @@ export async function collectPromotions({ fetcher = fetch, sources = SOURCES } =
 
 export async function runPublicCollector() {
   if (!process.env.DATABASE_URL) throw new Error('database_url_missing');
-  const { rows, diagnostics } = await collectPromotions({ sources: await configuredSources() });
-  console.table(diagnostics);
+  const configured = await configuredSources();
+  const discovered = process.env.COLLECTOR_DISCOVERY === 'false' ? [] : await discoverSources(fetchPage);
+  const sources = [...new Map([...configured, ...discovered].map(source => [source.url, source])).values()];
+  const { rows, diagnostics } = await collectPromotions({ sources });
+  const diagnosticSummary = new Map();
+  for (const row of diagnostics) {
+    const key = `${row.platform}:${row.status}:${row.reason || ''}`;
+    const item = diagnosticSummary.get(key) || { platform: row.platform, status: row.status, reason: row.reason || '', requests: 0, captured: 0 };
+    item.requests++; item.captured += row.captured; diagnosticSummary.set(key, item);
+  }
+  console.table([...diagnosticSummary.values()]);
   const summary = { productsCreated: 0, offersCreated: 0, offersUpdated: 0, persisted: 0 };
   if (!rows.length) {
     console.table([summary]);
@@ -240,7 +250,7 @@ export async function runPublicCollector() {
       const log = [], counts = new Map();
       for (const row of rows.sort((a, b) => (1 - b.currentPrice / b.originalPrice) - (1 - a.currentPrice / a.originalPrice))) {
         const key = `${row.platform === 'amazon_us' ? 'us' : 'br'}:${row.category}`;
-        if ((counts.get(key) || 0) >= 20) continue;
+        if ((counts.get(key) || 0) >= 100) continue;
         const [before] = await tx.execute(sql`select (select count(*)::int from public.products) as products,
           exists(select 1 from public.offers where platform = ${row.platform} and external_id = ${row.externalId}) as existing`);
         const offer = await captureOfferInTransaction(tx, row);

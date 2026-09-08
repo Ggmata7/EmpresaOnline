@@ -1,5 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 
 export const marketplace = pgEnum('marketplace', ['amazon_br', 'amazon_us', 'mercado_livre']);
 export const offerCurrency = pgEnum('offer_currency', ['BRL', 'USD']);
@@ -37,6 +37,8 @@ export const offers = pgTable('offers', {
   currency: offerCurrency('currency').notNull(),
   discountPercentage: integer('discount_percentage').generatedAlwaysAs(sql`case when original_price > current_price then least(100, greatest(0, floor((original_price - current_price) * 100 / original_price)::integer)) else 0 end`),
   referencePriceKind: text('reference_price_kind').default('unknown').notNull(),
+  verifiedCoupon: jsonb('verified_coupon'),
+  priceEvidence: jsonb('price_evidence'),
   referenceProvenance: text('reference_provenance'),
   historyVerifiedAt: time('history_verified_at'),
   rating: numeric('rating', { precision: 2, scale: 1 }),

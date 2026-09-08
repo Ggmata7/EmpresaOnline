@@ -79,7 +79,7 @@ test('category cap reserves twenty products independently for each region', () =
   const rows = ['brasil', 'global'].flatMap((region) => Array.from({ length: 25 }, (_, index) => ({
     id: `${region}-${index}`, region, category: 'Automotivo', price: 100, discountPercent: 50 - index,
   })));
-  const selected = limitOffersPerCategory(rows);
+  const selected = limitOffersPerCategory(rows, 20);
   assert.equal(selected.length, 40);
   assert.equal(selected.filter((offer) => offer.region === 'global').length, 20);
   assert.equal(selected.filter((offer) => offer.region === 'brasil').length, 20);

@@ -3,6 +3,7 @@ import 'server-only';
 import { categoryFromDatabase, limitOffersPerCategory, networkFromDatabase, retailerFromDatabase, type Offer, type Region } from '@/lib/offers';
 import { buildAffiliateUrl, type RedirectCandidate } from '@/lib/affiliate-links';
 import { lowestPriceFirst } from '@/lib/product-comparison';
+import { validCoupon } from '@/lib/deals/coupon';
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 
@@ -20,13 +21,14 @@ type ProductRow = {
 type NormalizedRow = {
   id: string; product_id: string; platform: string; source_url: string; affiliate_url: string | null;
   original_price: number | string | null; current_price: number | string; currency: 'BRL' | 'USD';
+  verified_coupon?: unknown;
   reference_price_kind: string; history_verified_at: string | null; rating: number | string | null;
   rating_count: number | null; shipping_price: number | string | null; shipping_label: string | null;
   in_stock: boolean | null; last_checked_at: string | null; expires_at: string | null; products: ProductRow;
 };
 type CatalogEntry = { display: Offer; destination: RedirectCandidate };
 const legacySelect = 'id,slug,plataforma,titulo,categoria,subcategoria,regiao,moeda,url_original,url_afiliado,imagem_url,avaliacao,preco_atual,preco_medio_30d,oferta_valida_ate,atualizado_em,cupons(codigo,valido_ate,ativo)';
-const normalizedSelect = 'id,product_id,platform,source_url,affiliate_url,original_price,current_price,currency,reference_price_kind,history_verified_at,rating,rating_count,shipping_price,shipping_label,in_stock,last_checked_at,expires_at,products!inner(id,slug,title,category,subcategory,image_url,is_international)';
+const normalizedSelect = 'id,product_id,platform,source_url,affiliate_url,original_price,current_price,currency,verified_coupon,reference_price_kind,history_verified_at,rating,rating_count,shipping_price,shipping_label,in_stock,last_checked_at,expires_at,products!inner(id,slug,title,category,subcategory,image_url,is_international)';
 
 export class CatalogUnavailableError extends Error {}
 
@@ -64,7 +66,7 @@ function fromLegacy(row: LegacyRow): CatalogEntry | null {
   const reference = validPrice(row.preco_medio_30d) ?? price;
   const display: Offer = {
     id: row.id, productId: row.id, slug: row.slug, region: network === 'amazon-us' ? 'global' : 'brasil',
-    category: categoryFromDatabase(row.categoria, row.subcategoria), subcategory: row.subcategoria,
+    category: categoryFromDatabase(row.categoria, row.subcategoria, row.titulo), subcategory: row.subcategoria,
     title: row.titulo, retailer: retailerFromDatabase(row.plataforma), oldPrice: reference, price, currency: row.moeda,
     coupon: coupon?.codigo, expiresAt: row.oferta_valida_ate || undefined, imageUrl: row.imagem_url || undefined,
     rating: validPrice(row.avaliacao), network, priceBasis: 'list', availability: 'unknown',
@@ -81,21 +83,24 @@ function fromNormalized(row: NormalizedRow): CatalogEntry | null {
   const network = networkFromDatabase(row.platform);
   if (!network || !row.products || (network === 'amazon-us' ? row.currency !== 'USD' : row.currency !== 'BRL')) return null;
   if (row.products.is_international !== (network === 'amazon-us')) return null;
-  const price = Number(row.current_price);
+  const coupon = validCoupon(row.verified_coupon, Number(row.current_price));
+  const price = coupon?.price ?? Number(row.current_price);
   const reference = validPrice(row.original_price) ?? price;
   const historyVerifiedAt = row.reference_price_kind === 'average_30d' ? row.history_verified_at || undefined : undefined;
   const availability = row.in_stock === true ? 'in_stock' : row.in_stock === false ? 'out_of_stock' : 'unknown';
   const shippingCost = validPrice(row.shipping_price) ?? null;
+  const expiresAt = coupon ? new Date(Math.min(Date.parse(coupon.validUntil), row.expires_at ? Date.parse(row.expires_at) : Infinity)).toISOString() : row.expires_at || undefined;
   const display: Offer = {
     id: row.id, productId: row.product_id, slug: row.products.slug, region: network === 'amazon-us' ? 'global' : 'brasil',
     isInternational: row.products.is_international,
-    category: row.products.category, subcategory: row.products.subcategory || '', title: row.products.title,
+    category: categoryFromDatabase(row.products.category, row.products.subcategory || '', row.products.title), subcategory: row.products.subcategory || '', title: row.products.title,
     retailer: retailerFromDatabase(row.platform), imageUrl: row.products.image_url || undefined,
+    coupon: coupon?.code,
     price, oldPrice: reference, currency: row.currency, network, priceBasis: historyVerifiedAt ? 'history30d' : 'list',
     historyVerifiedAt, rating: validPrice(row.rating), ratingCount: row.rating_count ?? undefined,
     shippingCost, shippingLabel: row.shipping_label || undefined, availability,
     lastChecked: row.last_checked_at || undefined, verifiedAt: row.last_checked_at || undefined,
-    verified: Boolean(row.last_checked_at), expiresAt: row.expires_at || undefined, discountPercent: discount(price, reference),
+    verified: Boolean(row.last_checked_at), expiresAt, discountPercent: discount(price, reference),
   };
   return { display, destination: { id: row.id, productId: row.product_id, network, price, currency: row.currency,
     shippingCost, availability, expiresAt: display.expiresAt, sourceUrl: row.source_url,
@@ -163,13 +168,14 @@ async function loadEntries(slug?: string, region?: Region) {
 function groupProducts(entries: CatalogEntry[]) {
   const groups = new Map<string, CatalogEntry[]>();
   for (const entry of entries.filter(displayable)) {
-    const key = `${entry.display.productId}:${entry.display.region}`;
+    const identity = entry.display.isInternational ? entry.display.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() : entry.display.productId;
+    const key = `${identity}:${entry.display.region}`;
     groups.set(key, [...(groups.get(key) || []), entry]);
   }
   return Array.from(groups.values()).map((group) => {
     const best = [...group].sort((a, b) => lowestPriceFirst(a.display, b.display))[0];
     return { ...best.display, alternatives: group.map(({ display }) => ({
-      id: display.id, retailer: display.retailer, network: display.network, price: display.price,
+      coupon: display.coupon, id: display.id, retailer: display.retailer, network: display.network, price: display.price,
       currency: display.currency as 'BRL' | 'USD', shippingCost: display.shippingCost,
       shippingLabel: display.shippingLabel, lastChecked: display.lastChecked,
     })) };

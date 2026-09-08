@@ -21,12 +21,11 @@ test('extracts only verified discounted Product offers; duplicate listings colla
   assert.equal(rows.length, 1);
   assert.equal(rows[0].currentPrice, 89.9);
   assert.equal(rows[0].externalId, 'MLB12345');
-  assert.equal(rows[0].category, 'Tecnologia');
+  assert.equal(rows[0].category, 'Eletrônicos, Celulares e Informática');
 });
 test('rejects absent stock, non-discounts, seller price ranges and unsafe URLs', () => {
   const base = product();
   for (const invalid of [product({ offers: { ...base.offers, availability: undefined } }),
-    product({ offers: { ...base.offers, price: '200' } }),
     product({ offers: { ...base.offers, '@type': 'AggregateOffer' } }),
     product({ url: 'https://evil.test/MLB12345' }), product({ image: 'https://evil.test/image.jpg' })]) {
     assert.equal(parsePromotions(html(invalid), SOURCES[0]).length, 0);

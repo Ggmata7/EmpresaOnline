@@ -12,6 +12,7 @@ export type CapturedOffer = {
   platform: Platform; externalId: string; sourceUrl: string;
   originalPrice: number | null; currentPrice: number; currency: 'BRL' | 'USD';
   inStock: boolean; checkedAt: Date; shippingPrice?: number | null;
+  priceEvidence?: { parser: string; reference: number | null; unitPriceExcluded: boolean };
   referenceProvenance?: string;
   expiresAt?: Date;
 };
@@ -57,11 +58,13 @@ export async function captureOfferInTransaction(tx: Transaction, input: Captured
       productId = product.id;
     }
   }
+  await tx.update(products).set({ category: input.category, updatedAt: new Date() }).where(eq(products.id, productId));
   const values = { productId, platform: input.platform, externalId: input.externalId, sourceUrl: input.sourceUrl,
     affiliateUrl, currentPrice: input.currentPrice.toFixed(2), originalPrice: input.originalPrice?.toFixed(2) ?? null,
     currency: input.currency, inStock: input.inStock, isActive: true, lastCheckedAt: input.checkedAt,
     shippingPrice: input.shippingPrice?.toFixed(2) ?? null,
     referencePriceKind: input.originalPrice === null ? 'unknown' : 'list',
+    priceEvidence: input.priceEvidence ?? null,
     referenceProvenance: input.referenceProvenance ?? null, expiresAt: input.expiresAt ?? null, updatedAt: new Date() };
   const [saved] = existing
     ? await tx.update(offers).set(values).where(eq(offers.id, existing.id)).returning()
