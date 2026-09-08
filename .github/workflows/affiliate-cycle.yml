@@ -27,6 +27,7 @@ jobs:
           PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/sync-catalog.mjs
+
   curate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -43,10 +44,12 @@ jobs:
         working-directory: automation
     steps:
       - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
           run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -56,6 +59,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Validate automation
         run: pnpm check && pnpm test
+
       - name: Curate offers
         env:
           SOURCES_JSON: ${{ secrets.SOURCES_JSON }}
