@@ -2,6 +2,11 @@ name: Affiliate catalog cycle
 
 on:
   workflow_dispatch:
+    inputs:
+      scale_catalog:
+        description: 'Expandir até 100 produtos nacionais por categoria'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 */6 * * *'
 
@@ -30,7 +35,7 @@ jobs:
 
   curate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       COLLECTOR_MODE: public
@@ -63,6 +68,7 @@ jobs:
         run: pnpm check && pnpm test
 
       - name: Curate offers
+        if: inputs.scale_catalog != true
         env:
           SOURCES_JSON: ${{ secrets.SOURCES_JSON }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -74,3 +80,11 @@ jobs:
           MAX_CONCURRENCY: '3'
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
+      - name: Expand verified catalog
+        if: inputs.scale_catalog == true
+        working-directory: .
+        run: node scripts/seed-catalog-scale.ts
+      - name: Report verified catalog
+        if: always()
+        working-directory: .
+        run: node scripts/verify-scale.ts

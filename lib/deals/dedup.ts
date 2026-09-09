@@ -17,6 +17,15 @@ export type CapturedOffer = {
   expiresAt?: Date;
 };
 
+const batches = new WeakMap<object, { products: (typeof products.$inferSelect)[]; offers: (typeof offers.$inferSelect)[] }>();
+/** Cache only inside the locked transaction; never reuse state across commits. */
+export async function enableCaptureBatch(tx: Transaction) {
+  await tx.execute(sql`select pg_advisory_xact_lock(20260908, 11)`);
+  const state = { products: await tx.select().from(products), offers: await tx.select().from(offers) };
+  batches.set(tx, state);
+  return state;
+}
+
 /** All normalized ingestion paths should call this function inside their transaction. */
 export async function captureOfferInTransaction(tx: Transaction, input: CapturedOffer) {
   const international = input.platform === 'amazon_us';
@@ -33,19 +42,20 @@ export async function captureOfferInTransaction(tx: Transaction, input: Captured
     : path.match(/\/dp\/([A-Z0-9]{10})/)?.[1];
   if (capturedId !== input.externalId) throw new Error('listing_identity_mismatch');
   // Serialize matching + insertion across workers, including the initial seed.
-  await tx.execute(sql`select pg_advisory_xact_lock(20260908, 11)`);
-  const [existing] = await tx.select().from(offers).where(and(eq(offers.platform, input.platform), eq(offers.externalId, input.externalId))).limit(1);
+  const batch = batches.get(tx);
+  if (!batch) await tx.execute(sql`select pg_advisory_xact_lock(20260908, 11)`);
+  const [existing] = batch ? batch.offers.filter(row => row.platform === input.platform && row.externalId === input.externalId) : await tx.select().from(offers).where(and(eq(offers.platform, input.platform), eq(offers.externalId, input.externalId))).limit(1);
   if (existing?.lastCheckedAt && existing.lastCheckedAt > input.checkedAt) return existing;
   let productId = existing?.productId;
   if (productId) {
-    const conflicting = await tx.select({ id: offers.id }).from(offers).where(and(eq(offers.productId, productId),
+    const conflicting = batch ? batch.offers.filter(row => row.productId === productId && row.platform === input.platform && row.externalId !== input.externalId) : await tx.select({ id: offers.id }).from(offers).where(and(eq(offers.productId, productId),
       eq(offers.platform, input.platform), sql`${offers.externalId} <> ${input.externalId}`)).limit(1);
     // Same-marketplace IDs with a generic identical title can be different variants/models.
     if (conflicting.length) productId = undefined;
   }
   if (!productId) {
-    const candidates = await tx.select().from(products).where(eq(products.isInternational, international));
-    const sameMarketplace = await tx.select({ productId: offers.productId, externalId: offers.externalId }).from(offers).where(eq(offers.platform, input.platform));
+    const candidates = batch ? batch.products.filter(row => row.isInternational === international) : await tx.select().from(products).where(eq(products.isInternational, international));
+    const sameMarketplace = batch ? batch.offers.filter(row => row.platform === input.platform) : await tx.select({ productId: offers.productId, externalId: offers.externalId }).from(offers).where(eq(offers.platform, input.platform));
     const matches = candidates.filter(product => titlesMatch(product.title, input.title) &&
       !sameMarketplace.some(offer => offer.productId === product.id && offer.externalId !== input.externalId));
     // An ambiguous title is not enough evidence to merge; a supplied slug can disambiguate.
@@ -56,9 +66,10 @@ export async function captureOfferInTransaction(tx: Transaction, input: Captured
       const [product] = await tx.insert(products).values({ title: input.title.trim(), slug, category: input.category,
         imageUrl: input.imageUrl, isInternational: international }).returning();
       productId = product.id;
+      batch?.products.push(product);
     }
   }
-  await tx.update(products).set({ category: input.category, updatedAt: new Date() }).where(eq(products.id, productId));
+  if (!batch || batch.products.find(row => row.id === productId)?.category !== input.category) await tx.update(products).set({ category: input.category, updatedAt: new Date() }).where(eq(products.id, productId));
   const values = { productId, platform: input.platform, externalId: input.externalId, sourceUrl: input.sourceUrl,
     affiliateUrl, currentPrice: input.currentPrice.toFixed(2), originalPrice: input.originalPrice?.toFixed(2) ?? null,
     currency: input.currency, inStock: input.inStock, isActive: true, lastCheckedAt: input.checkedAt,
@@ -69,6 +80,12 @@ export async function captureOfferInTransaction(tx: Transaction, input: Captured
   const [saved] = existing
     ? await tx.update(offers).set(values).where(eq(offers.id, existing.id)).returning()
     : await tx.insert(offers).values(values).returning();
+  if (batch) {
+    const index = batch.offers.findIndex(row => row.id === saved.id);
+    if (index < 0) batch.offers.push(saved); else batch.offers[index] = saved;
+    const product = batch.products.find(row => row.id === productId);
+    if (product) product.category = input.category;
+  }
   return saved;
 }
 

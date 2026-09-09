@@ -40,7 +40,7 @@ test('US electronics are USD and remain separate from domestic offers', () => {
 test('blocks do not trigger retries or database writes; diagnostics show every source', async () => {
   let calls = 0;
   const result = await collectPromotions({ fetcher: async () => { calls++; return new Response('', { status: 403 }); } });
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);
   assert.equal(result.rows.length, 0);
   assert.equal(result.diagnostics.every(row => row.reason === 'http_403'), true);
   await assert.rejects(fetchPage(SOURCES[0], async () => new Response('robot check', { headers: { 'content-type': 'text/html' } })), /access_challenge/);

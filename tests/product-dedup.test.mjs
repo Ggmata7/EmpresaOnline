@@ -22,6 +22,14 @@ test('matching preserves capacity, model, color, voltage and quantity', () => {
     assert.equal(titlesMatch(a, b), false);
   }
 });
+test('curated creatine identity matches only the same formula, brand and package size', () => {
+  const title = 'Soldiers Nutrition Creatina Monohidratada 1kg';
+  assert.equal(titlesMatch(title, 'Creatina 1kg Suplemento Monohidratada em pó 100% Pura - Soldiers Nutrition'), true);
+  assert.equal(titlesMatch(title, title.replace('1kg', '500g')), false);
+  assert.equal(titlesMatch(title, 'Kit 2 ' + title), false);
+  assert.equal(titlesMatch(title, title + ' com beta alanina'), false);
+});
+
 test('Amazon tags replace duplicate tags and discard redirect parameters', () => {
   const br = new URL(tagAffiliateUrl('https://www.amazon.com.br/dp/B000E2CVDI?tag=other&tag=bad&redirect=evil', 'amazon_br'));
   assert.deepEqual(br.searchParams.getAll('tag'), ['ggm0e-20']);

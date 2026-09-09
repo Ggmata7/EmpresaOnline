@@ -1,12 +1,13 @@
-import { classifyCategory as category } from '../../../lib/offers.ts';
+import { CATEGORIES, classifyCategory as category } from '../../../lib/offers.ts';
 import { UNIT_PRICE, isUnitPrice, amazonReferencePrice } from './price-guards.mjs';
 import { createMarketplaceAdapter } from '../../../lib/affiliates/adapters/index.ts';
+import { ML_HEADERS, collectMlPublic } from './ml-public.mjs';
 import { load } from 'cheerio';
 import { discoverSources } from './discovery.mjs';
 import { readFile } from 'node:fs/promises';
 
 export const SOURCES = [
-  { platform: 'mercado_livre', currency: 'BRL', url: 'https://api.mercadolibre.com/sites/MLB/search?q=ofertas&limit=15' },
+  { platform: 'mercado_livre', currency: 'BRL', url: 'https://www.mercadolivre.com.br/ofertas' },
   { platform: 'amazon_br', currency: 'BRL', url: 'https://www.amazon.com.br/dp/B07DVJC66X' },
   { platform: 'amazon_us', currency: 'USD', url: 'https://www.amazon.com/dp/B000E2CVDI' },
 ];
@@ -38,13 +39,13 @@ export async function fetchPage(source, fetcher = fetch) {
   let current = new URL(source.url), response;
   const signal = AbortSignal.timeout(20000);
   for (let hop = 0; hop <= 2; hop++) {
-    response = await fetcher(current, { headers, redirect: 'manual', signal });
+    response = await fetcher(current, { headers: source.platform === 'mercado_livre' ? ML_HEADERS : headers, redirect: 'manual', signal });
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
     const location = response.headers.get('location');
     if (!location) throw new Error('redirect_blocked');
     const next = new URL(location, current);
     if (next.origin !== new URL(source.url).origin || next.username || next.password ||
-      !/^\/(events\/|deals(?:\/|$)|gp\/goldbox|ofertas(?:\/|$)|campanha\/)/.test(next.pathname)) throw new Error('redirect_blocked');
+      !(source.platform === 'mercado_livre' && /\/MLB-?\d+(?:[-/]|$)/i.test(next.pathname) && next.pathname.match(/MLB-?\d+/i)?.[0] === current.pathname.match(/MLB-?\d+/i)?.[0]) && !/^\/(events\/|deals(?:\/|$)|gp\/goldbox|ofertas(?:\/|$)|campanha\/)/.test(next.pathname)) throw new Error('redirect_blocked');
     await response.body?.cancel();
     current = next;
   }
@@ -65,7 +66,7 @@ export function parsePromotions(html, source) {
   const $ = load(html), candidates = [];
   function add(row) {
     const title = String(row.title || '').replace(/\s+/g, ' ').trim();
-    const group = category(title);
+    const group = category(title) || (CATEGORIES.includes(source.categoryHint) ? source.categoryHint : null);
     if (!group) return;
     row.originalPrice = row.originalPrice > row.currentPrice ? row.originalPrice : row.currentPrice; // Unknown reference price is zero discount, never an invented margin.
     if (!row.inStock || !row.currentPrice || !row.originalPrice || row.originalPrice < row.currentPrice || row.currency !== source.currency) return;
@@ -116,12 +117,13 @@ export function parsePromotions(html, source) {
     const priceNode = ml ? card.find('.poly-price__current .andes-money-amount, .promotion-item__price').first() : card.find('.a-price:not(.a-text-price) .a-offscreen').first();
     const oldNode = card.find(ml ? 's.andes-money-amount, .promotion-item__oldprice' : '.a-price.a-text-price .a-offscreen').first();
     const mlMoney = node => {
+      if (UNIT_PRICE.test(node.text()) || UNIT_PRICE.test(node.parent().text())) return null;
       const fraction = node.find('.andes-money-amount__fraction').text();
       const cents = node.find('.andes-money-amount__cents').text();
       return money(fraction ? `${fraction}${cents ? ',' + cents : ''}` : node.text(), source.currency);
     };
     const text = card.text();
-    const available = /comprar|adicionar ao carrinho|add to cart|buy now/i.test(card.find('button, [role="button"], input[type="submit"]').text()) || card.find('[content="https://schema.org/InStock"]').length > 0;
+    const available = (ml && /chegar[aá]/i.test(card.find('.poly-component__shipping-v2').text())) || /comprar|adicionar ao carrinho|add to cart|buy now/i.test(card.find('button, [role="button"], input[type="submit"]').text()) || card.find('[content="https://schema.org/InStock"]').length > 0;
     add({ title: card.find(ml ? '.poly-component__title, .promotion-item__title, .ui-search-item__title' : 'h2, [data-testid="product-card-title"]').first().text() || link.attr('title'),
       imageUrl: card.find('img').first().attr('data-src') || card.find('img').first().attr('src'), sourceUrl: link.attr('href'),
       currentPrice: ml ? mlMoney(priceNode) : money(priceNode.text(), source.currency),
@@ -201,7 +203,10 @@ export async function collectPromotions({ fetcher = fetch, sources = SOURCES } =
     }
     try {
       let offers;
-      if (source.platform === 'mercado_livre') {
+      if (source.platform === 'mercado_livre' && new URL(source.url).hostname !== 'api.mercadolibre.com') {
+        offers = await collectMlPublic(source, { fetchPage: item => fetchPage(item, fetcher), parsePromotions, money, fetcher });
+        offers = createMarketplaceAdapter(source.platform, rows => rows).parseOffer(offers);
+      } else if (source.platform === 'mercado_livre') {
         const response = await fetcher(source.url, { headers: { Accept: 'application/json', 'Accept-Language': 'pt-BR', ...(process.env.MERCADO_LIVRE_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.MERCADO_LIVRE_ACCESS_TOKEN}` } : {}) },
           redirect: 'error', signal: AbortSignal.timeout(20000) });
         if (!response.ok) throw new Error(`http_${response.status}`);
@@ -220,10 +225,10 @@ export async function collectPromotions({ fetcher = fetch, sources = SOURCES } =
   return { rows: [...new Map(rows.map(row => [`${row.platform}:${row.externalId}`, row])).values()], diagnostics };
 }
 
-export async function runPublicCollector() {
+export async function runPublicCollector({ sources: suppliedSources } = {}) {
   if (!process.env.DATABASE_URL) throw new Error('database_url_missing');
-  const configured = await configuredSources();
-  const discovered = process.env.COLLECTOR_DISCOVERY === 'false' ? [] : await discoverSources(fetchPage);
+  const configured = suppliedSources || await configuredSources();
+  const discovered = suppliedSources || process.env.COLLECTOR_DISCOVERY === 'false' ? [] : await discoverSources(fetchPage);
   const sources = [...new Map([...configured, ...discovered].map(source => [source.url, source])).values()];
   const { rows, diagnostics } = await collectPromotions({ sources });
   const diagnosticSummary = new Map();
@@ -239,7 +244,7 @@ export async function runPublicCollector() {
     console.warn('[collector] Nenhuma oferta verificável; catálogo preservado.');
     return { ...summary, diagnostics };
   }
-  const [{ default: postgres }, { drizzle }, { sql }, { captureOfferInTransaction }] = await Promise.all([
+  const [{ default: postgres }, { drizzle }, { sql }, { captureOfferInTransaction, enableCaptureBatch }] = await Promise.all([
     import('postgres'), import('drizzle-orm/postgres-js'), import('drizzle-orm'), import('../../../lib/deals/dedup.ts'),
   ]);
   const client = postgres(process.env.DATABASE_URL, { max: 1, prepare: false, ssl: { rejectUnauthorized: false }, connect_timeout: 10,
@@ -247,16 +252,16 @@ export async function runPublicCollector() {
   try {
     const persisted = await drizzle(client).transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(20260908, 11)`);
+      const batch = await enableCaptureBatch(tx);
+      const initialProducts = batch.products.length;
       const log = [], counts = new Map();
       for (const row of rows.sort((a, b) => (1 - b.currentPrice / b.originalPrice) - (1 - a.currentPrice / a.originalPrice))) {
         const key = `${row.platform === 'amazon_us' ? 'us' : 'br'}:${row.category}`;
         if ((counts.get(key) || 0) >= 100) continue;
-        const [before] = await tx.execute(sql`select (select count(*)::int from public.products) as products,
-          exists(select 1 from public.offers where platform = ${row.platform} and external_id = ${row.externalId}) as existing`);
+        const existing = batch.offers.some(offer => offer.platform === row.platform && offer.externalId === row.externalId);
         const offer = await captureOfferInTransaction(tx, row);
-        const [after] = await tx.execute(sql`select count(*)::int as products from public.products`);
-        summary.productsCreated += after.products - before.products;
-        summary[before.existing ? 'offersUpdated' : 'offersCreated']++;
+        summary.productsCreated = batch.products.length - initialProducts;
+        summary[existing ? 'offersUpdated' : 'offersCreated']++;
         summary.persisted++;
         counts.set(key, (counts.get(key) || 0) + 1);
         log.push({ title: row.title, platform: row.platform, currency: row.currency, price: row.currentPrice, offerId: offer.id });
@@ -268,7 +273,7 @@ export async function runPublicCollector() {
     const confirmed = ids.length ? await client`select p.title, p.is_international, o.platform, o.currency,
       o.original_price, o.current_price, o.discount_percentage, o.id as offer_id
       from public.offers o join public.products p on p.id = o.product_id where o.id in ${client(ids)}` : [];
-    console.table(confirmed);
+    console.table(confirmed.map(row => ({ ...row, title: row.title.slice(0, 70) })));
     console.table([summary]);
     return { ...summary, diagnostics, confirmed: confirmed.length };
   } finally { await client.end({ timeout: 5 }); }

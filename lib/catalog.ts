@@ -4,6 +4,7 @@ import { categoryFromDatabase, limitOffersPerCategory, networkFromDatabase, reta
 import { buildAffiliateUrl, type RedirectCandidate } from '@/lib/affiliate-links';
 import { lowestPriceFirst } from '@/lib/product-comparison';
 import { validCoupon } from '@/lib/deals/coupon';
+import { titlesMatch } from '@/lib/deals/match';
 import { sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 
@@ -160,6 +161,14 @@ async function requestRows(normalized: boolean, slug?: string, region?: Region):
 async function loadEntries(slug?: string, region?: Region) {
   if (process.env.CATALOG_SCHEMA_VERSION !== '1') {
     const entries = await requestRows(true, slug, region);
+    if (entries?.length === 0 && slug && process.env.DATABASE_URL) {
+      // Preserve historical slugs after a conservative national-product merge.
+      const [old] = await getDb().execute<{ title: string }>(sql`select title from public.products where slug=${slug} and is_international=false limit 1`);
+      if (old) {
+        const matches = (await requestRows(true, undefined, 'brasil') || []).filter(entry => titlesMatch(old.title, entry.display.title));
+        if (new Set(matches.map(entry => entry.display.productId)).size === 1) return matches;
+      }
+    }
     if (entries) return entries;
   }
   return await requestRows(false, slug, region) || [];
