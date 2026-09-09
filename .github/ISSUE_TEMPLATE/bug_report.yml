@@ -1,0 +1,58 @@
+name: Relatar bug
+description: Reportar um defeito reproduzível no CATch.
+title: 'fix: '
+body:
+  - type: markdown
+    attributes:
+      value: 'Leia AGENTS.md e .github/CONTRIBUTING.md antes de desenvolver. Não inclua segredos, cookies, dados pessoais ou valores de .env.'
+  - type: input
+    id: summary
+    attributes:
+      label: Resumo do problema
+      placeholder: Descreva o comportamento incorreto em uma frase.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      description: Inclua passos numerados e dados de exemplo sem informações sensíveis.
+      placeholder: '1. Acessar... 2. Executar... 3. Observar...'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamento observado
+      description: Anexe mensagens de erro ou capturas já sanitizadas, se disponíveis.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Ambiente e versão
+      description: Informe Local, Preview ou Produção; commit/deploy, sistema, navegador e Node/pnpm quando aplicável.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critérios de aceite e impacto
+      description: Como confirmar a correção? Quais usuários ou fluxos são afetados?
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Antes de enviar
+      options:
+        - label: Procurei Issues existentes e não encontrei uma duplicata aberta.
+          required: true
+        - label: Removi segredos e dados pessoais das informações fornecidas.
+          required: true

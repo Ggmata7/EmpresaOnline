@@ -1,0 +1,65 @@
+name: Propor melhoria ou tarefa técnica
+description: Registrar Feature, Chore, refatoração, performance ou documentação antes do desenvolvimento.
+body:
+  - type: markdown
+    attributes:
+      value: 'Leia AGENTS.md e .github/CONTRIBUTING.md. Descreva o resultado desejado sem incluir credenciais ou valores reais de variáveis de ambiente.'
+  - type: dropdown
+    id: change_type
+    attributes:
+      label: Tipo de tarefa
+      options:
+        - Feature
+        - Chore
+        - Refatoração
+        - Performance
+        - Documentação
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema ou necessidade
+      description: Quem é afetado e por que esta alteração é necessária?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solução proposta
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Escopo e limites
+      description: O que será alterado e o que fica fora desta tarefa?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critérios de aceite
+      description: Liste resultados verificáveis e testes necessários.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Riscos, dependências e ambiente
+      description: Indique necessidade de migração, alteração de variáveis, impacto em produção e rollback. Use nomes de variáveis, nunca valores secretos.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Antes de enviar
+      options:
+        - label: Procurei uma Issue equivalente e delimitei os critérios de aceite.
+          required: true
+        - label: O desenvolvimento seguirá branch isolada e Pull Request vinculado a esta Issue.
+          required: true
