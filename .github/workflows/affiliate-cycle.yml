@@ -67,16 +67,16 @@ jobs:
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
 
-      # 2. Executa a expansão e população do catálogo no cron E quando marcado no disparo manual
+      # 2. Executa a expansão e população do catálogo
       - name: Expand verified catalog
         if: github.event_name == 'schedule' || inputs.scale_catalog == true
         working-directory: .
-        run: pnpm exec tsx scripts/seed-catalog-scale.ts
+        run: node scripts/seed-catalog-scale.ts
 
       - name: Report verified catalog
         if: always()
         working-directory: .
-        run: pnpm exec tsx scripts/verify-scale.ts
+        run: node scripts/verify-scale.ts
 
   sync_normalized:
     needs: curate
