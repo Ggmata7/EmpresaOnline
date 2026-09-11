@@ -52,7 +52,7 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      # 1. Curadoria principal de ofertas
+      # 1. Varre e salva as ofertas com desconto real no banco
       - name: Curate offers
         if: github.event_name == 'schedule' || inputs.scale_catalog != true
         env:
@@ -67,17 +67,11 @@ jobs:
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
 
-      # 2. Expansão de catálogo usando node (original)
+      # 2. Expande o catalogo para volume maximo
       - name: Expand verified catalog
         if: github.event_name == 'schedule' || inputs.scale_catalog == true
         working-directory: .
         run: node scripts/seed-catalog-scale.ts
-
-    # 3. Relatório informativo (nunca bloqueia a publicação)
-      - name: Report verified catalog
-        if: always()
-        working-directory: .
-        run: node scripts/verify-scale.ts || true
 
   sync_normalized:
     needs: curate
