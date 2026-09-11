@@ -26,7 +26,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       COLLECTOR_MODE: public
       COLLECTOR_DISCOVERY: 'true'
-      COLLECTOR_DISCOVERY_PAGES: '2'
+      COLLECTOR_DISCOVERY_PAGES: '10' # ou '8' (para buscar um volume bruto muito maior)
       AMAZON_BR_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_ID }}
       AMAZON_BR_CREATORS_CLIENT_SECRET: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_SECRET }}
       AMAZON_US_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_US_CREATORS_CLIENT_ID }}
@@ -60,9 +60,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           AMAZON_BR_TAG: ${{ secrets.AMAZON_BR_TAG }}
           AMAZON_US_TAG: ${{ secrets.AMAZON_US_TAG }}
-          MIN_REAL_DISCOUNT_PERCENT: '15'
-          MAX_OFFERS_PER_CATEGORY: '100'
-          MAX_CONCURRENCY: '3'
+          MIN_REAL_DISCOUNT_PERCENT: '25'
+          MAX_OFFERS_PER_CATEGORY: '300'
+          MAX_CONCURRENCY: '2'
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
 
