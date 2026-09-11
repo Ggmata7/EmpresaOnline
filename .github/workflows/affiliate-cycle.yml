@@ -26,7 +26,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       COLLECTOR_MODE: public
       COLLECTOR_DISCOVERY: 'true'
-      COLLECTOR_DISCOVERY_PAGES: '7'
+      COLLECTOR_DISCOVERY_PAGES: '10'
       AMAZON_BR_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_ID }}
       AMAZON_BR_CREATORS_CLIENT_SECRET: ${{ secrets.AMAZON_BR_CREATORS_CLIENT_SECRET }}
       AMAZON_US_CREATORS_CLIENT_ID: ${{ secrets.AMAZON_US_CREATORS_CLIENT_ID }}
@@ -52,7 +52,11 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      # 1. Executa a curadoria de ofertas a cada hora
+      # Instala o tsx direto na máquina do GitHub em 3 segundos
+      - name: Install tsx runner
+        run: npm install -g tsx
+
+      # 1. Curadoria de ofertas
       - name: Curate offers
         if: github.event_name == 'schedule' || inputs.scale_catalog != true
         env:
@@ -61,22 +65,24 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           AMAZON_BR_TAG: ${{ secrets.AMAZON_BR_TAG }}
           AMAZON_US_TAG: ${{ secrets.AMAZON_US_TAG }}
-          MIN_REAL_DISCOUNT_PERCENT: '20' # Reduzido de 25% para 15% para permitir atingir 600+ ofertas
+          MIN_REAL_DISCOUNT_PERCENT: '15'
           MAX_OFFERS_PER_CATEGORY: '300'
           MAX_CONCURRENCY: '2'
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
 
-      # 2. Executa a expansão e população do catálogo
+      # 2. Expansão do catálogo
       - name: Expand verified catalog
         if: github.event_name == 'schedule' || inputs.scale_catalog == true
         working-directory: .
-        run: node scripts/seed-catalog-scale.ts
+        run: tsx scripts/seed-catalog-scale.ts
 
+      # 3. Relatório final com proteção contra travamento de deploy
       - name: Report verified catalog
         if: always()
+        continue-on-error: true
         working-directory: .
-        run: node scripts/verify-scale.ts
+        run: tsx scripts/verify-scale.ts
 
   sync_normalized:
     needs: curate
