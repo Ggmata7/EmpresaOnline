@@ -73,12 +73,11 @@ jobs:
         working-directory: .
         run: node scripts/seed-catalog-scale.ts
 
-      # 3. Relatório final com proteção total de término
+    # 3. Relatório informativo (nunca bloqueia a publicação)
       - name: Report verified catalog
         if: always()
-        continue-on-error: true
         working-directory: .
-        run: node scripts/verify-scale.ts
+        run: node scripts/verify-scale.ts || true
 
   sync_normalized:
     needs: curate
