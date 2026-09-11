@@ -8,7 +8,7 @@ on:
         type: boolean
         default: false
   schedule:
-    # Executa a cada 1 hora (no minuto 0)
+    # Executa de hora em hora (no minuto 0)
     - cron: '0 * * * *'
 
 concurrency:
@@ -52,13 +52,8 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
-      # Instala o tsx direto na máquina do GitHub em 3 segundos
-      - name: Install tsx runner
-        run: npm install -g tsx
-
-      # 1. Curadoria de ofertas
+      # 1. Curadoria principal (coleta e grava no banco)
       - name: Curate offers
-        if: github.event_name == 'schedule' || inputs.scale_catalog != true
         env:
           SOURCES_JSON: ${{ secrets.SOURCES_JSON }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -71,18 +66,19 @@ jobs:
           ENABLE_WHATSAPP_DISPATCH: 'false'
         run: pnpm start
 
-      # 2. Expansão do catálogo
+      # 2. Expansão com npx sob demanda
       - name: Expand verified catalog
         if: github.event_name == 'schedule' || inputs.scale_catalog == true
+        continue-on-error: true
         working-directory: .
-        run: tsx scripts/seed-catalog-scale.ts
+        run: npx --yes tsx scripts/seed-catalog-scale.ts
 
-      # 3. Relatório final com proteção contra travamento de deploy
+      # 3. Relatório protegido (nunca trava a esteira)
       - name: Report verified catalog
         if: always()
         continue-on-error: true
         working-directory: .
-        run: tsx scripts/verify-scale.ts
+        run: npx --yes tsx scripts/verify-scale.ts
 
   sync_normalized:
     needs: curate
